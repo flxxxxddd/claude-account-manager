@@ -1,6 +1,6 @@
 {
   "name": "claude-account-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Switch between multiple Claude.ai accounts and see live session limits without leaving Claude Code.",
   "author": { "name": "claude-account-manager contributors" },
   "homepage": "https://github.com/flxxxxddd/claude-account-manager",
