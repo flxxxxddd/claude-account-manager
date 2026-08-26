@@ -23,7 +23,7 @@ import { refreshUsageCache, statuslineCommand } from "./commands/statusline.ts";
 import { configureWarmup, refreshCommand, warmCommand } from "./commands/warm.ts";
 import { c } from "./ui.ts";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 interface Args {
   command: string;
