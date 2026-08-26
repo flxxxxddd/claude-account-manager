@@ -35,12 +35,36 @@ export class AuthExpiredError extends Error {
   }
 }
 
+/** The usage endpoint throttles; callers should show stale data, not an error dump. */
+export class RateLimitedError extends Error {
+  constructor(public retryAfterSeconds?: number) {
+    super(
+      retryAfterSeconds
+        ? `usage endpoint is throttling — retry in ${retryAfterSeconds}s`
+        : "usage endpoint is throttling — try again shortly",
+    );
+    this.name = "RateLimitedError";
+  }
+}
+
+/** Collapse an API error body to one line so it cannot break table layout. */
+function briefly(body: string, max = 120): string {
+  const flat = body.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+}
+
 export async function fetchUsage(accessToken: string): Promise<UsageSnapshot> {
   const res = await fetch(`${API_BASE}/api/oauth/usage`, {
     headers: oauthHeaders(accessToken),
   });
   if (res.status === 401 || res.status === 403) throw new AuthExpiredError();
-  if (!res.ok) throw new Error(`usage request failed: ${res.status} ${await res.text()}`);
+  if (res.status === 429) {
+    const retryAfter = Number(res.headers.get("retry-after"));
+    throw new RateLimitedError(Number.isFinite(retryAfter) ? retryAfter : undefined);
+  }
+  if (!res.ok) {
+    throw new Error(`usage request failed: ${res.status} ${briefly(await res.text())}`);
+  }
   return (await res.json()) as UsageSnapshot;
 }
 
@@ -100,7 +124,7 @@ export async function refreshTokens(oauth: ClaudeAiOauth): Promise<ClaudeAiOauth
     if (res.status === 400 || res.status === 401) {
       throw new AuthExpiredError(`refresh token rejected (${res.status}) — re-login required`);
     }
-    throw new Error(`token refresh failed: ${res.status} ${text}`);
+    throw new Error(`token refresh failed: ${res.status} ${briefly(text)}`);
   }
   const body = (await res.json()) as {
     access_token: string;
@@ -156,7 +180,7 @@ export async function warmSession(accessToken: string, model: string): Promise<W
     }),
   });
   if (res.status === 401 || res.status === 403) throw new AuthExpiredError();
-  if (!res.ok) throw new Error(`warm-up failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`warm-up failed: ${res.status} ${briefly(await res.text())}`);
   const body = (await res.json()) as {
     model: string;
     usage?: { input_tokens?: number; output_tokens?: number };

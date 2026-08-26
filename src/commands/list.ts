@@ -57,7 +57,11 @@ function renderRow(status: ProfileStatus, nameWidth: number, emailWidth: number)
     return `${marker} ${pad(name, nameWidth)}  ${pad(email, emailWidth)}  ${c.red("not logged in")}`;
   }
   if (!status.usage) {
-    const why = status.error ? c.red(truncate(status.error, 46)) : c.gray("no usage data");
+    const why = status.throttled
+      ? c.gray("limits throttled — retry shortly")
+      : status.error
+        ? c.red(truncate(status.error, 46))
+        : c.gray("no usage data");
     return `${marker} ${pad(name, nameWidth)}  ${pad(email, emailWidth)}  ${why}`;
   }
 
@@ -92,6 +96,7 @@ function toJson(status: ProfileStatus) {
     lastUsedAt: status.profile.lastUsedAt ?? null,
     fiveHour: status.usage?.five_hour ?? null,
     sevenDay: status.usage?.seven_day ?? null,
+    throttled: status.throttled ?? false,
     error: status.error ?? null,
   };
 }

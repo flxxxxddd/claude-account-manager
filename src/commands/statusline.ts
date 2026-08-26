@@ -87,9 +87,11 @@ export async function refreshUsageCache(name: string): Promise<void> {
     const oauth = await accessTokenFor(name, profile);
     cache[name] = { fetchedAt: Date.now(), usage: await fetchUsage(oauth.accessToken) };
   } catch (err) {
+    // Keep the last good reading: a throttled or offline refresh should show a
+    // slightly stale number rather than blanking the status line.
     cache[name] = {
       fetchedAt: Date.now(),
-      usage: null,
+      usage: cache[name]?.usage ?? null,
       error: err instanceof Error ? err.message : String(err),
     };
   }

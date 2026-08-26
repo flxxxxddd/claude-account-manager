@@ -1,6 +1,7 @@
 /** Profile-level operations: read creds, keep them fresh, report limits. */
 import {
   AuthExpiredError,
+  RateLimitedError,
   fetchProfile,
   fetchUsage,
   needsRefresh,
@@ -62,6 +63,8 @@ export interface ProfileStatus {
   active: boolean;
   loggedIn: boolean;
   usage?: UsageSnapshot;
+  /** The credentials are fine; the usage endpoint just would not answer. */
+  throttled?: boolean;
   error?: string;
 }
 
@@ -79,6 +82,7 @@ export async function statusOf(
   } catch (err) {
     base.error = err instanceof Error ? err.message : String(err);
     if (err instanceof NotLoggedInError) base.loggedIn = false;
+    if (err instanceof RateLimitedError) base.throttled = true;
   }
   return base;
 }
