@@ -49,10 +49,17 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Publish
-        # Skips cleanly when the repo has no NPM_TOKEN secret configured.
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
             echo "NPM_TOKEN is not set — skipping npm publish."
+            exit 0
+          fi
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          # Re-running a release, or force-moving a tag, must not fail on a
+          # version the registry already has.
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already published — nothing to do."
             exit 0
           fi
           npm publish --access public --provenance
