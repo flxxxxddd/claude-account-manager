@@ -58,7 +58,8 @@ describe("credentialFilePath", () => {
   });
 
   test("lives inside the profile storage directory", () => {
-    expect(credentialFilePath("/tmp/p")).toBe("/tmp/p/.credentials.json");
+    // join() so the assertion holds under Windows path separators too.
+    expect(credentialFilePath("/tmp/p")).toBe(join("/tmp/p", ".credentials.json"));
   });
 });
 
