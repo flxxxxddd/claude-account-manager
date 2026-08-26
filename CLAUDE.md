@@ -93,7 +93,7 @@ account you expect under a profile's environment, the addressing is right.
 ## Commits
 
 Conventional Commits, and **never** a `Co-authored-by` trailer or any other
-attribution footer — commits are authored by `flxxxxddd <flxxd@lunaria.land>` alone.
+attribution footer.
 
 ```
 <type>(<optional scope>): <subject in the imperative, lowercase, no full stop>
