@@ -42,6 +42,12 @@ Users must be able to uninstall this tool and still be logged in.
 exchange. Calling `refreshTokens()` and dropping the result logs the profile out. Every
 call site writes the result back inside `withLock("token-<profile>")`.
 
+**Rotation does not extend the refresh deadline.** `refresh_token_expires_in` counts
+down to an instant fixed at login, roughly 28 days out; two rotations an hour apart
+land on the same instant (observed 2026-08-27, client `9d1c250a`, pro account). The
+daemon keeps an idle account *queryable*, not *alive* — only `cca login` resets the
+clock. Do not write user-facing text implying otherwise.
+
 **macOS writes go to the file, not the Keychain.** Claude Code reads Keychain first and
 falls back to the file, but writes the Keychain natively — there is no
 `add-generic-password` in its binary. `security add-generic-password` truncates a piped

@@ -116,11 +116,18 @@ API request billed against the account's normal allowance.
 interval; the tick decides what is due. There is no long-lived process to supervise, and
 a missed tick only means a late warm-up.
 
-### Keeping idle accounts alive
+### Keeping idle accounts usable
 
-Refresh tokens expire after roughly 27 days, so an account you have not touched in a
-month would otherwise need a full re-login. The daemon rotates tokens twice a day when
-`refreshTokens` is on (the default); `cca refresh --all` does it by hand.
+The daemon rotates OAuth tokens twice a day when `refreshTokens` is on (the default);
+`cca refresh --all` does it by hand. That keeps an untouched account's access token
+valid, so its limits stay readable and it can be launched without a detour.
+
+**It does not postpone the re-login.** The refresh deadline is fixed when you log in —
+about 28 days — and rotating does not move it. Measured against a live account: two
+rotations an hour apart reported countdowns landing on the same instant. So every
+account needs a browser login roughly monthly no matter how diligent the daemon is.
+`cca list` and the status line warn as that date approaches; `cca login <name>` resets
+it.
 
 ## Statusline
 
