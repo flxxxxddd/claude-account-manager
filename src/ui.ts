@@ -1,11 +1,29 @@
 /** Terminal formatting — colours, limit bars, relative times. */
-const noColor =
-  process.env.NO_COLOR !== undefined ||
-  process.env.TERM === "dumb" ||
-  !process.stdout.isTTY;
+
+/**
+ * Colour is off when piped, because tables and prompts are meant for a human
+ * at a terminal. The status line is the exception: Claude Code always reads it
+ * through a pipe and *does* render ANSI, so that path calls `setColor(true)`.
+ */
+function detectColor(): boolean {
+  if (process.env.NO_COLOR !== undefined) return false;
+  if (process.env.TERM === "dumb") return false;
+  return Boolean(process.stdout.isTTY);
+}
+
+let colorEnabled = detectColor();
+
+/** NO_COLOR still wins — an explicit opt-out is never overridden. */
+export function setColor(on: boolean): void {
+  colorEnabled = on && process.env.NO_COLOR === undefined && process.env.TERM !== "dumb";
+}
+
+export function colorIsOn(): boolean {
+  return colorEnabled;
+}
 
 function paint(code: string) {
-  return (s: string) => (noColor ? s : `\x1b[${code}m${s}\x1b[0m`);
+  return (s: string) => (colorEnabled ? `\x1b[${code}m${s}\x1b[0m` : s);
 }
 
 export const c = {
@@ -18,25 +36,60 @@ export const c = {
   magenta: paint("35"),
   cyan: paint("36"),
   gray: paint("90"),
+  // 256-colour accents for the status line. Terminals without 256-colour
+  // support fall back to their nearest palette entry on their own.
+  orange: paint("38;5;208"),
+  violet: paint("38;5;141"),
+  teal: paint("38;5;80"),
+  lime: paint("38;5;149"),
+  rose: paint("38;5;211"),
+  steel: paint("38;5;110"),
 };
 
 /** Utilisation drives the colour: green under half, yellow, then red. */
 export function limitColor(utilization: number | null | undefined): (s: string) => string {
   if (utilization === null || utilization === undefined) return c.gray;
   if (utilization >= 90) return c.red;
+  if (utilization >= 75) return c.orange;
   if (utilization >= 60) return c.yellow;
   return c.green;
 }
 
 const BAR_FULL = "█";
 const BAR_EMPTY = "░";
+/** Eighth-width blocks let a 10-cell bar resolve to 1% instead of 10%. */
+const BAR_PARTIAL = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 
-export function bar(utilization: number | null | undefined, width = 10): string {
-  if (utilization === null || utilization === undefined) return c.gray(BAR_EMPTY.repeat(width));
+/**
+ * A proportional bar with sub-cell resolution.
+ *
+ * `ascii` keeps the old `#---` look for terminals with no block glyphs.
+ */
+export function bar(
+  utilization: number | null | undefined,
+  width = 10,
+  style: "blocks" | "ascii" = "blocks",
+): string {
+  const full = style === "ascii" ? "#" : BAR_FULL;
+  const empty = style === "ascii" ? "-" : BAR_EMPTY;
+  if (utilization === null || utilization === undefined) return c.gray(empty.repeat(width));
+
   const clamped = Math.max(0, Math.min(100, utilization));
-  const filled = Math.round((clamped / 100) * width);
+  const exact = (clamped / 100) * width;
+  const filled = Math.floor(exact);
   const paintFn = limitColor(utilization);
-  return paintFn(BAR_FULL.repeat(filled)) + c.gray(BAR_EMPTY.repeat(width - filled));
+
+  if (style === "ascii") {
+    const rounded = Math.round(exact);
+    return paintFn(full.repeat(rounded)) + c.gray(empty.repeat(width - rounded));
+  }
+
+  // A non-zero reading always shows at least a sliver, so "in use" never
+  // renders as an empty bar.
+  const eighths = Math.floor((exact - filled) * 8);
+  const partial = filled < width ? BAR_PARTIAL[clamped > 0 && filled === 0 && eighths === 0 ? 1 : eighths]! : "";
+  const rest = width - filled - (partial ? 1 : 0);
+  return paintFn(full.repeat(filled) + partial) + c.gray(empty.repeat(Math.max(0, rest)));
 }
 
 /** "21:50" for today, "Mon 03:15" further out — reset times read better local. */
@@ -73,10 +126,20 @@ export function formatUtilization(utilization: number | null | undefined): strin
   return `${String(Math.round(utilization)).padStart(3)}%`;
 }
 
+const ANSI = /\x1b\[[0-9;]*m/g;
+
+/** Visible width, ignoring colour codes — needed to lay out or trim a line. */
+export function visibleLength(value: string): number {
+  return value.replace(ANSI, "").length;
+}
+
+export function stripAnsi(value: string): string {
+  return value.replace(ANSI, "");
+}
+
 export function pad(value: string, width: number): string {
   // Pad on the visible length so colour codes do not skew the columns.
-  const visible = value.replace(/\x1b\[[0-9;]*m/g, "").length;
-  return value + " ".repeat(Math.max(0, width - visible));
+  return value + " ".repeat(Math.max(0, width - visibleLength(value)));
 }
 
 export const symbols = {
