@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { bindingUtilization, fetchUsage, type UsageSnapshot } from "../api.ts";
+import { profileFromEnv } from "../cc-paths.ts";
 import { CCA_HOME, loadConfig, type Config, type Profile } from "../config.ts";
 import { accessTokenFor } from "../session.ts";
 import { c, setColor } from "../ui.ts";
@@ -115,7 +116,10 @@ export async function statuslineCommand(
   if (payload && !options.preview) await cachePayload(payload);
 
   const now = Date.now();
-  const activeName = config.activeProfile ?? null;
+  // Which account *this* session runs as, not which one the next launch will
+  // use. Those differ the moment a second account is launched elsewhere, and
+  // `config.activeProfile` would then relabel every open session at once.
+  const activeName = profileFromEnv(config.profiles) ?? config.activeProfile ?? null;
   const activeProfile = activeName ? config.profiles[activeName] ?? null : null;
   const cache = await readCache(Object.keys(config.profiles));
 

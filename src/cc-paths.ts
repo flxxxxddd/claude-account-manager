@@ -18,7 +18,7 @@
  */
 import { createHash } from "node:crypto";
 import { homedir, userInfo } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** Empty for production builds of Claude Code; kept for fidelity. */
 const OAUTH_FILE_SUFFIX = "";
@@ -78,6 +78,39 @@ export type IsolationMode = "shared" | "isolated";
  *                settings.json, plugins and MCP servers stay in ~/.claude.
  * - `isolated` — a completely separate CC config directory.
  */
+/**
+ * Which profile a process is running under, read from its own environment.
+ *
+ * `config.activeProfile` records what the *next* launch will use, so it is the
+ * wrong answer for anything describing a session already running: launching a
+ * second account rewrites it, and every open session then claims to be that
+ * account. The environment does not have that problem — Claude Code inherits
+ * the variables `profileEnv` set at launch and passes them to its own children,
+ * so a status line spawned inside a session is told the truth by its own env.
+ *
+ * Returns null when nothing matches, which means the session was not launched
+ * through `cca` and the caller has to fall back.
+ */
+export function profileFromEnv(
+  profiles: Record<string, { dir: string; mode: IsolationMode }>,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const shared = env.CLAUDE_SECURESTORAGE_CONFIG_DIR;
+  const isolated = env.CLAUDE_CONFIG_DIR;
+  if (!shared && !isolated) return null;
+
+  for (const [name, profile] of Object.entries(profiles)) {
+    const marker = profile.mode === "shared" ? shared : isolated;
+    if (marker && samePath(marker, profile.dir)) return name;
+  }
+  return null;
+}
+
+/** Compare two paths as paths, so a trailing slash does not hide a match. */
+function samePath(a: string, b: string): boolean {
+  return resolve(a) === resolve(b);
+}
+
 export function profileEnv(
   storageDir: string,
   mode: IsolationMode,

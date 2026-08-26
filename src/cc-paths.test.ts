@@ -7,6 +7,7 @@ import {
   credentialServiceName,
   DEFAULT_CC_CONFIG_DIR,
   profileEnv,
+  profileFromEnv,
 } from "./cc-paths.ts";
 
 /**
@@ -78,5 +79,61 @@ describe("profileEnv", () => {
     const shared = Object.keys(profileEnv("/tmp/p", "shared"));
     const isolated = Object.keys(profileEnv("/tmp/p", "isolated"));
     expect(shared).not.toEqual(isolated);
+  });
+});
+
+/**
+ * Which account a *running* session belongs to.
+ *
+ * `config.activeProfile` answers a different question — what the next launch
+ * will use — and launching a second account rewrites it. Two sessions open on
+ * one account and a third on another must not make the first two relabel
+ * themselves.
+ */
+describe("profileFromEnv", () => {
+  const profiles = {
+    work: { dir: "/home/u/.ccacc/profiles/work", mode: "shared" as const },
+    personal: { dir: "/home/u/.ccacc/profiles/personal", mode: "shared" as const },
+    walled: { dir: "/home/u/.ccacc/profiles/walled", mode: "isolated" as const },
+  };
+
+  test("a shared profile is found by its credential storage dir", () => {
+    expect(
+      profileFromEnv(profiles, {
+        CLAUDE_SECURESTORAGE_CONFIG_DIR: "/home/u/.ccacc/profiles/personal",
+      }),
+    ).toBe("personal");
+  });
+
+  test("an isolated profile is found by its config dir", () => {
+    expect(
+      profileFromEnv(profiles, { CLAUDE_CONFIG_DIR: "/home/u/.ccacc/profiles/walled" }),
+    ).toBe("walled");
+  });
+
+  test("a shared profile is not matched by the isolated variable", () => {
+    // The two variables mean different things; crossing them would report an
+    // account the session is not actually using.
+    expect(
+      profileFromEnv(profiles, { CLAUDE_CONFIG_DIR: "/home/u/.ccacc/profiles/work" }),
+    ).toBeNull();
+  });
+
+  test("a trailing slash still matches", () => {
+    expect(
+      profileFromEnv(profiles, {
+        CLAUDE_SECURESTORAGE_CONFIG_DIR: "/home/u/.ccacc/profiles/work/",
+      }),
+    ).toBe("work");
+  });
+
+  test("a session launched outside cca reports nothing", () => {
+    expect(profileFromEnv(profiles, {})).toBeNull();
+  });
+
+  test("a directory belonging to no profile reports nothing", () => {
+    expect(
+      profileFromEnv(profiles, { CLAUDE_SECURESTORAGE_CONFIG_DIR: "/tmp/elsewhere" }),
+    ).toBeNull();
   });
 });
