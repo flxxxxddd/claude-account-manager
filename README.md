@@ -165,7 +165,7 @@ what you do not want; unknown names are ignored:
 ```json
 "statusline": {
   "lines": [
-    ["account", "limits", "burn", "others"],
+    ["account", "limits", "burn", "others", "login"],
     ["model", "ctx", "git", "cost", "uptime"]
   ],
   "barWidth": 10,
@@ -180,6 +180,7 @@ what you do not want; unknown names are ignored:
 | `limits` | five-hour and seven-day bars with reset countdowns |
 | `burn` | projected time to the cap, red when it beats the reset |
 | `others` | the other accounts' usage, with the switch hint |
+| `login` | countdown when an account's login is about to lapse, silent otherwise |
 | `model` | model, reasoning effort, thinking, fast mode, output style |
 | `ctx` | context window used, flagged when the window is 1M |
 | `git` | branch, ahead/behind, conflicted, modified, untracked |

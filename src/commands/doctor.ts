@@ -12,7 +12,7 @@ import { profileEnv } from "../cc-paths.ts";
 import type { Config } from "../config.ts";
 import { CONFIG_PATH } from "../config.ts";
 import { getStore, readSlot } from "../store/index.ts";
-import { c, symbols } from "../ui.ts";
+import { c, formatDeadline, LOGIN_WARN_MS, symbols } from "../ui.ts";
 import { claudeBin } from "./profiles.ts";
 
 interface Check {
@@ -66,6 +66,23 @@ export async function doctorCommand(config: Config, options: { deep?: boolean } 
         ? credentialServiceName(profile.dir)
         : `missing at ${credentialServiceName(profile.dir)}`,
     });
+
+    const expiresAt = blob?.claudeAiOauth?.refreshTokenExpiresAt;
+    if (expiresAt !== undefined) {
+      const remaining = expiresAt - Date.now();
+      checks.push({
+        label: `profile ${name}: login`,
+        ok: remaining > 0,
+        detail:
+          remaining <= 0
+            ? `expired — run \`cca login ${name}\``
+            : remaining <= LOGIN_WARN_MS
+              // Worth spelling out: the daemon rotates tokens, and people
+              // reasonably assume that is what keeps a login alive.
+              ? `${formatDeadline(remaining)} left — run \`cca login ${name}\` before it lapses, rotating tokens will not extend it`
+              : `${formatDeadline(remaining)} left`,
+      });
+    }
 
     if (options.deep && version !== null) {
       const seen = await claudeSeesAccount(profile.dir, profile.mode);

@@ -13,6 +13,7 @@ import {
 } from "../config.ts";
 import { accessTokenFor } from "../session.ts";
 import { readSlot, removeSlot, writeSlot } from "../store/index.ts";
+import { forgetCachedUsage } from "./statusline.ts";
 import { c, symbols } from "../ui.ts";
 
 /**
@@ -73,6 +74,7 @@ export async function importCommand(
   };
   config.activeProfile ??= resolved;
   await saveConfig(config);
+  await forgetCachedUsage(resolved);
 
   process.stdout.write(
     `${c.green(symbols.ok)} Imported current session as ${c.bold(resolved)}` +
@@ -139,6 +141,9 @@ export async function loginCommand(
   config.profiles[name] = profile;
   config.activeProfile ??= name;
   await saveConfig(config);
+  // New credentials mean a new deadline; the cached one would keep the status
+  // line warning about a login that was just renewed.
+  await forgetCachedUsage(name);
 
   process.stdout.write(
     `${c.green(symbols.ok)} Profile ${c.bold(name)} is logged in` +

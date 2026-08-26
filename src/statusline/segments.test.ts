@@ -22,6 +22,7 @@ function context(overrides: Partial<RenderContext> = {}): RenderContext {
     fiveHour: { utilization: 20, resetsAt: NOW + 3_600_000 },
     sevenDay: { utilization: 10, resetsAt: NOW + 86_400_000 },
     binding: 20,
+    loginExpiresAt: null,
     projection: null,
     others: [],
     git: null,
@@ -38,6 +39,7 @@ function other(overrides: Partial<OtherAccount> = {}): OtherAccount {
     label: "personal",
     utilization: 5,
     binding: 5,
+    loginExpiresAt: null,
     resetsAt: NOW + 7_200_000,
     stale: false,
     ...overrides,
@@ -152,5 +154,53 @@ describe("burn", () => {
   test("names the moment the cap arrives when it beats the reset", () => {
     const projection = { rate: 1.4, capsAt: NOW + 20 * 60_000, beforeReset: true };
     expect(render(context({ projection }))).toContain("caps");
+  });
+});
+
+const DAY = 86_400_000;
+
+/**
+ * The login deadline is the one number that cannot be recovered from anywhere
+ * else once it passes: rotation does not move it, so the warning is the only
+ * thing standing between an idle account and a surprise browser login.
+ */
+describe("login", () => {
+  const render = (ctx: RenderContext) => stripAnsi(segments.login!(ctx) ?? "");
+
+  test("stays silent for most of the month", () => {
+    expect(segments.login!(context({ loginExpiresAt: NOW + 20 * DAY }))).toBeNull();
+  });
+
+  test("counts down in the final week", () => {
+    expect(render(context({ loginExpiresAt: NOW + 5 * DAY }))).toBe("⚠ work login 5d");
+  });
+
+  test("switches to hours on the last day", () => {
+    expect(render(context({ loginExpiresAt: NOW + 18 * 3_600_000 }))).toBe("⚠ work login 18h");
+  });
+
+  test("a lapsed login is reported as expired, not as a negative countdown", () => {
+    expect(render(context({ loginExpiresAt: NOW - DAY }))).toBe("✗ work login expired");
+  });
+
+  test("warns about a background account, which is the one that dies unnoticed", () => {
+    const line = render(
+      context({ others: [other({ label: "personal", loginExpiresAt: NOW + 3 * DAY })] }),
+    );
+    expect(line).toBe("⚠ personal login 3d");
+  });
+
+  test("lists several deadlines soonest first", () => {
+    const line = render(
+      context({
+        loginExpiresAt: NOW + 6 * DAY,
+        others: [other({ label: "personal", loginExpiresAt: NOW + 2 * DAY })],
+      }),
+    );
+    expect(line).toBe("⚠ personal login 2d  ⚠ work login 6d");
+  });
+
+  test("an account with no recorded deadline is not guessed at", () => {
+    expect(segments.login!(context({ others: [other()] }))).toBeNull();
   });
 });

@@ -121,6 +121,23 @@ export function formatRelative(resetsAt: string | null | undefined): string {
   return `${Math.floor(hours / 24)}d${hours % 24}h`;
 }
 
+/** A login this close to its deadline is worth telling the user about. */
+export const LOGIN_WARN_MS = 7 * 86_400_000;
+/** And this close, it is worth shouting about. */
+export const LOGIN_URGENT_MS = 2 * 86_400_000;
+
+/**
+ * "5d", "18h", "expired" — how long until a deadline.
+ *
+ * A login deadline is a month away or it is urgent; nothing in between needs
+ * minutes, and "27d7h" reads as noise where "27d" reads as "not yet".
+ */
+export function formatDeadline(remainingMs: number): string {
+  if (remainingMs <= 0) return "expired";
+  const hours = Math.floor(remainingMs / 3_600_000);
+  return hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
+}
+
 export function formatUtilization(utilization: number | null | undefined): string {
   if (utilization === null || utilization === undefined) return "  ?%";
   return `${String(Math.round(utilization)).padStart(3)}%`;

@@ -1,6 +1,18 @@
 import type { Config } from "../config.ts";
 import { statusAll, type ProfileStatus } from "../session.ts";
-import { bar, c, formatRelative, formatReset, formatUtilization, limitColor, pad, symbols } from "../ui.ts";
+import {
+  bar,
+  c,
+  formatDeadline,
+  formatRelative,
+  formatReset,
+  formatUtilization,
+  limitColor,
+  LOGIN_URGENT_MS,
+  LOGIN_WARN_MS,
+  pad,
+  symbols,
+} from "../ui.ts";
 
 export interface ListOptions {
   json?: boolean;
@@ -44,7 +56,35 @@ export async function listCommand(config: Config, options: ListOptions = {}): Pr
   for (const status of statuses) {
     process.stdout.write(`${renderRow(status, nameWidth, emailWidth)}\n`);
   }
+
+  const footer = loginWarnings(statuses);
+  if (footer) process.stdout.write(`\n${footer}\n`);
   return 0;
+}
+
+/**
+ * Warn about logins about to lapse.
+ *
+ * Rotation does not move this deadline, so an account nobody touches simply
+ * stops working one day. This line is the notice.
+ */
+export function loginWarnings(statuses: ProfileStatus[]): string | null {
+  const now = Date.now();
+  const due = statuses
+    .filter((s) => s.loginExpiresAt !== undefined && s.loginExpiresAt - now <= LOGIN_WARN_MS)
+    .sort((a, b) => a.loginExpiresAt! - b.loginExpiresAt!);
+  if (due.length === 0) return null;
+
+  return due
+    .map((status) => {
+      const remaining = status.loginExpiresAt! - now;
+      const paint = remaining <= LOGIN_URGENT_MS ? c.red : c.yellow;
+      return remaining <= 0
+        ? `${c.red(symbols.fail)} ${status.name} is logged out — run ${c.bold(`cca login ${status.name}`)}`
+        : `${paint("!")} ${status.name} needs a new login in ${paint(formatDeadline(remaining))} — ` +
+            `run ${c.bold(`cca login ${status.name}`)} ${c.gray("(rotating tokens does not extend it)")}`;
+    })
+    .join("\n");
 }
 
 function renderRow(status: ProfileStatus, nameWidth: number, emailWidth: number): string {

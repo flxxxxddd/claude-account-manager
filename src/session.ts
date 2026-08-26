@@ -63,6 +63,8 @@ export interface ProfileStatus {
   active: boolean;
   loggedIn: boolean;
   usage?: UsageSnapshot;
+  /** When the refresh token dies and a browser login is required. */
+  loginExpiresAt?: number;
   /** The credentials are fine; the usage endpoint just would not answer. */
   throttled?: boolean;
   error?: string;
@@ -78,6 +80,7 @@ export async function statusOf(
   try {
     const oauth = await accessTokenFor(name, profile);
     base.loggedIn = true;
+    base.loginExpiresAt = oauth.refreshTokenExpiresAt;
     if (options.usage !== false) base.usage = await fetchUsage(oauth.accessToken);
   } catch (err) {
     base.error = err instanceof Error ? err.message : String(err);

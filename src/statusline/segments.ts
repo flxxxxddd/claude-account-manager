@@ -7,7 +7,17 @@
  */
 import { basename } from "node:path";
 import type { BarStyle, Config, Profile } from "../config.ts";
-import { bar, c, formatRelative, formatReset, limitColor, symbols } from "../ui.ts";
+import {
+  bar,
+  c,
+  formatDeadline,
+  formatRelative,
+  formatReset,
+  limitColor,
+  LOGIN_URGENT_MS,
+  LOGIN_WARN_MS,
+  symbols,
+} from "../ui.ts";
 import type { Projection } from "./burn.ts";
 import type { GitState } from "./git.ts";
 import type { StatuslinePayload } from "./payload.ts";
@@ -25,6 +35,8 @@ export interface OtherAccount {
   utilization: number | null;
   /** Highest utilisation across every window — what the hint decides on. */
   binding: number | null;
+  /** When this account's refresh token dies and a browser login is required. */
+  loginExpiresAt: number | null;
   resetsAt: number | null;
   stale: boolean;
 }
@@ -38,6 +50,8 @@ export interface RenderContext {
   sevenDay: Window;
   /** Highest utilisation across the active account's windows. */
   binding: number | null;
+  /** When the active account's refresh token dies. */
+  loginExpiresAt: number | null;
   projection: Projection | null;
   others: OtherAccount[];
   git: GitState | null;
@@ -152,6 +166,40 @@ export const segments: Record<string, Segment> = {
           `${marker} ${label} ${paintFn(percent(other.utilization))}` +
           (reset ? ` ${c.gray(`↻${reset}`)}` : "")
         );
+      })
+      .join("  ");
+  },
+
+  /**
+   * Advance notice that an account is about to need a browser login.
+   *
+   * Rotating tokens does not move this deadline — it is fixed at login, about
+   * 28 days out — so an account left alone simply dies on schedule. Silence
+   * until the last week, then a countdown; anything more would be noise for
+   * twenty-one days running.
+   */
+  login(ctx) {
+    const deadlines: { label: string; at: number }[] = [];
+    if (ctx.loginExpiresAt !== null && ctx.activeName) {
+      deadlines.push({ label: ctx.activeProfile?.label ?? ctx.activeName, at: ctx.loginExpiresAt });
+    }
+    for (const other of ctx.others) {
+      if (other.loginExpiresAt !== null) {
+        deadlines.push({ label: other.label, at: other.loginExpiresAt });
+      }
+    }
+
+    const due = deadlines
+      .filter((entry) => entry.at - ctx.now <= LOGIN_WARN_MS)
+      .sort((a, b) => a.at - b.at);
+    if (due.length === 0) return null;
+
+    return due
+      .map((entry) => {
+        const remaining = entry.at - ctx.now;
+        const paintFn = remaining <= LOGIN_URGENT_MS ? c.red : c.orange;
+        const mark = remaining <= 0 ? symbols.fail : "⚠";
+        return paintFn(`${mark} ${entry.label} login ${formatDeadline(remaining)}`);
       })
       .join("  ");
   },

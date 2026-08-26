@@ -7,7 +7,7 @@
  * cache that a detached child refills.
  */
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { bindingUtilization, fetchUsage, type UsageSnapshot } from "../api.ts";
 import { CCA_HOME, loadConfig, type Config, type Profile } from "../config.ts";
@@ -38,6 +38,14 @@ const CACHE_DIR = join(CCA_HOME, "cache", "usage");
 const STALE_MS = 5 * 60_000;
 /** A refresh started this recently is assumed to still be running. */
 const REFRESH_CLAIM_MS = 30_000;
+/**
+ * How long a cached login deadline is trusted.
+ *
+ * The deadline itself only moves when someone logs in again, so this is not
+ * about drift — it is about noticing that a re-login happened. A warning that
+ * keeps crying "expiring" after the user already fixed it is worse than none.
+ */
+const LOGIN_RECHECK_MS = 6 * 60 * 60_000;
 
 interface CacheEntry {
   fetchedAt: number;
@@ -45,6 +53,16 @@ interface CacheEntry {
   error?: string;
   /** When a background refresh for this profile was last started. */
   refreshingAt?: number;
+  /**
+   * When the credentials were last consulted for the deadline below.
+   *
+   * Set even when the read fails. A profile whose credentials cannot be read
+   * has no deadline to record, and treating that as "still unknown" would
+   * spawn a fresh refresh on every single render.
+   */
+  tokenCheckedAt?: number;
+  /** When this profile's refresh token dies and a browser login is required. */
+  refreshTokenExpiresAt?: number;
 }
 
 type Cache = Record<string, CacheEntry>;
@@ -109,7 +127,15 @@ export async function statuslineCommand(
   // The payload's limits are fresher than anything a poll could get, so they
   // are folded back into the cache for `cca list` and for the next render.
   if (activeName && live.fiveHour) {
-    cache[activeName] = { fetchedAt: now, usage: toSnapshot(live) };
+    const previous = cache[activeName];
+    cache[activeName] = {
+      fetchedAt: now,
+      usage: toSnapshot(live),
+      // The payload knows nothing about credentials; dropping these would
+      // erase the active account's only expiry warning.
+      tokenCheckedAt: previous?.tokenCheckedAt,
+      refreshTokenExpiresAt: previous?.refreshTokenExpiresAt,
+    };
     await writeEntry(activeName, cache[activeName]!);
   }
 
@@ -137,6 +163,7 @@ export async function statuslineCommand(
     fiveHour,
     sevenDay,
     binding: highest(fiveHour.utilization, sevenDay.utilization),
+    loginExpiresAt: (activeName ? cache[activeName]?.refreshTokenExpiresAt : undefined) ?? null,
     projection,
     others,
     git,
@@ -218,6 +245,7 @@ function collectOthers(
         label: profile.label ?? name,
         utilization: window.utilization,
         binding: bindingUtilization(entry?.usage),
+        loginExpiresAt: entry?.refreshTokenExpiresAt ?? null,
         resetsAt: window.resetsAt,
         stale: !entry || now - entry.fetchedAt > STALE_MS,
       };
@@ -239,9 +267,11 @@ async function refreshStaleProfiles(
   now: number,
 ): Promise<void> {
   for (const name of Object.keys(config.profiles)) {
-    if (name === activeName && activeIsLive) continue;
     const entry = cache[name];
-    if (entry && now - entry.fetchedAt <= STALE_MS) continue;
+    const loginUnknown = entry?.tokenCheckedAt === undefined
+      || now - entry.tokenCheckedAt > LOGIN_RECHECK_MS;
+    if (name === activeName && activeIsLive && !loginUnknown) continue;
+    if (entry && now - entry.fetchedAt <= STALE_MS && !loginUnknown) continue;
     // Several sessions render at once and a cold cache stays cold until the
     // first child lands, so without a claim every one of them would spawn its
     // own refresh for the same profile.
@@ -255,6 +285,17 @@ async function refreshStaleProfiles(
   }
 }
 
+/**
+ * Drop a profile's cached reading.
+ *
+ * Logging in again moves the deadline the status line warns about, and a
+ * warning that keeps firing after the user has already fixed it teaches them
+ * to ignore it.
+ */
+export async function forgetCachedUsage(name: string): Promise<void> {
+  await rm(entryPath(name), { force: true });
+}
+
 /** Refresh one profile's cached usage; used by the detached child. */
 export async function refreshUsageCache(name: string): Promise<void> {
   const config = await loadConfig();
@@ -264,13 +305,20 @@ export async function refreshUsageCache(name: string): Promise<void> {
   const previous = await readEntry(name);
   try {
     const oauth = await accessTokenFor(name, profile);
-    await writeEntry(name, { fetchedAt: Date.now(), usage: await fetchUsage(oauth.accessToken) });
+    await writeEntry(name, {
+      fetchedAt: Date.now(),
+      usage: await fetchUsage(oauth.accessToken),
+      tokenCheckedAt: Date.now(),
+      refreshTokenExpiresAt: oauth.refreshTokenExpiresAt,
+    });
   } catch (err) {
     // Keep the last good reading: a throttled or offline refresh should show a
     // slightly stale number rather than blanking the status line.
     await writeEntry(name, {
       fetchedAt: Date.now(),
       usage: previous?.usage ?? null,
+      tokenCheckedAt: Date.now(),
+      refreshTokenExpiresAt: previous?.refreshTokenExpiresAt,
       error: err instanceof Error ? err.message : String(err),
     });
   }

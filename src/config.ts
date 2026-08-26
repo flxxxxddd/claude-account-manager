@@ -46,8 +46,8 @@ export interface StatuslineConfig {
    * Segments to draw, one array per rendered line. Unknown names are skipped,
    * so trimming the HUD is a matter of deleting entries.
    *
-   * Available: account, limits, burn, others, model, ctx, git, cost, uptime,
-   * dir, warmup, version.
+   * Available: account, limits, burn, others, login, model, ctx, git, cost,
+   * uptime, dir, warmup, version.
    */
   lines: string[][];
   barWidth: number;
@@ -76,7 +76,7 @@ export const DEFAULT_WARMUP: WarmupConfig = {
 
 export const DEFAULT_STATUSLINE: StatuslineConfig = {
   lines: [
-    ["account", "limits", "burn", "others"],
+    ["account", "limits", "burn", "others", "login"],
     ["model", "ctx", "git", "cost", "uptime"],
   ],
   barWidth: 10,
