@@ -39,11 +39,29 @@ export interface WarmupConfig {
   pollMinutes: number;
 }
 
+export type BarStyle = "blocks" | "ascii";
+
+export interface StatuslineConfig {
+  /**
+   * Segments to draw, one array per rendered line. Unknown names are skipped,
+   * so trimming the HUD is a matter of deleting entries.
+   *
+   * Available: account, limits, burn, others, model, ctx, git, cost, uptime,
+   * dir, warmup, version.
+   */
+  lines: string[][];
+  barWidth: number;
+  barStyle: BarStyle;
+  /** "off" drops ANSI even though Claude Code renders it. */
+  color: "on" | "off";
+}
+
 export interface Config {
   version: 1;
   activeProfile?: string;
   profiles: Record<string, Profile>;
   warmup: WarmupConfig;
+  statusline: StatuslineConfig;
 }
 
 export const DEFAULT_WARMUP: WarmupConfig = {
@@ -56,7 +74,22 @@ export const DEFAULT_WARMUP: WarmupConfig = {
   pollMinutes: 5,
 };
 
-const EMPTY: Config = { version: 1, profiles: {}, warmup: { ...DEFAULT_WARMUP } };
+export const DEFAULT_STATUSLINE: StatuslineConfig = {
+  lines: [
+    ["account", "limits", "burn", "others"],
+    ["model", "ctx", "git", "cost", "uptime"],
+  ],
+  barWidth: 10,
+  barStyle: "blocks",
+  color: "on",
+};
+
+const EMPTY: Config = {
+  version: 1,
+  profiles: {},
+  warmup: { ...DEFAULT_WARMUP },
+  statusline: structuredClone(DEFAULT_STATUSLINE),
+};
 
 export async function loadConfig(): Promise<Config> {
   let raw: string;
@@ -72,6 +105,7 @@ export async function loadConfig(): Promise<Config> {
     activeProfile: parsed.activeProfile,
     profiles: parsed.profiles ?? {},
     warmup: { ...DEFAULT_WARMUP, ...(parsed.warmup ?? {}) },
+    statusline: { ...structuredClone(DEFAULT_STATUSLINE), ...(parsed.statusline ?? {}) },
   };
 }
 

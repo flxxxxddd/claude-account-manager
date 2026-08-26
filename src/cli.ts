@@ -179,7 +179,7 @@ async function main(argv: string[]): Promise<number> {
       return daemonCommand(config, args);
 
     case "statusline":
-      return statuslineCommand(config);
+      return statuslineCommand(config, { preview: flagBool(args, "preview") });
 
     case "cache-refresh": {
       // Internal: the detached child spawned by `cca statusline`.
@@ -315,7 +315,8 @@ ${c.bold("Session warm-up")}
 
 ${c.bold("Integration")}
   cca shell-init fish       shell snippet so plain \`claude\` shows the picker
-  cca statusline            one-line status for Claude Code's statusLine
+  cca statusline            the HUD for Claude Code's statusLine
+  cca statusline --preview  redraw the last frame  ${c.gray("to try layout changes")}
   cca doctor [--deep]       verify the setup against Claude Code itself
 
 ${c.bold("Isolation")}
