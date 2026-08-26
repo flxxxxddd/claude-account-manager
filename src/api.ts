@@ -124,6 +124,48 @@ export async function fetchProfile(accessToken: string): Promise<ProfileInfo> {
  * The server rotates the refresh token, so the caller MUST persist the result
  * — dropping it on the floor logs the profile out.
  */
+/** The fields of a token response this code reads. */
+export interface TokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  /** Seconds the *new* refresh token is good for. */
+  refresh_token_expires_in?: number;
+  scope?: string;
+}
+
+/**
+ * Fold a token response into the stored credentials.
+ *
+ * `refresh_token_expires_in` was previously discarded. It is worth reading
+ * because it is the server's own word on when the account dies, and because of
+ * what it reveals:
+ *
+ * Observed 2026-08-27 against client 9d1c250a on a pro account — two rotations
+ * an hour apart returned countdowns landing on the *same* instant, 0.6s apart,
+ * matching the deadline set at login. The refresh deadline is anchored to the
+ * login and rotation does not move it. Rotating tokens therefore keeps a
+ * profile queryable but does not postpone its re-login; only a fresh login
+ * does. Anything claiming otherwise in user-facing text is wrong.
+ */
+export function applyTokenResponse(
+  oauth: ClaudeAiOauth,
+  body: TokenResponse,
+  now = Date.now(),
+): ClaudeAiOauth {
+  return {
+    ...oauth,
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token ?? oauth.refreshToken,
+    expiresAt: now + (body.expires_in ?? 3600) * 1000,
+    refreshTokenExpiresAt:
+      body.refresh_token_expires_in === undefined
+        ? oauth.refreshTokenExpiresAt
+        : now + body.refresh_token_expires_in * 1000,
+    scopes: body.scope ? body.scope.split(" ") : oauth.scopes,
+  };
+}
+
 export async function refreshTokens(oauth: ClaudeAiOauth): Promise<ClaudeAiOauth> {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -141,20 +183,7 @@ export async function refreshTokens(oauth: ClaudeAiOauth): Promise<ClaudeAiOauth
     }
     throw new Error(`token refresh failed: ${res.status} ${briefly(text)}`);
   }
-  const body = (await res.json()) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in?: number;
-    scope?: string;
-  };
-  const now = Date.now();
-  return {
-    ...oauth,
-    accessToken: body.access_token,
-    refreshToken: body.refresh_token ?? oauth.refreshToken,
-    expiresAt: now + (body.expires_in ?? 3600) * 1000,
-    scopes: body.scope ? body.scope.split(" ") : oauth.scopes,
-  };
+  return applyTokenResponse(oauth, (await res.json()) as TokenResponse);
 }
 
 /** Refresh is due once we are inside this window of expiry. */
