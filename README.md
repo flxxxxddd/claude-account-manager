@@ -56,6 +56,13 @@ npm install -g claude-account-manager
 Or grab a standalone binary from the [releases page](../../releases) — it bundles its
 own runtime and needs nothing else installed.
 
+On macOS, replace an existing binary rather than overwriting it in place: writing over a
+Mach-O file invalidates its signature and the kernel kills the next run with SIGKILL.
+
+```bash
+rm -f ~/.local/bin/cca && cp cca-macos-arm64 ~/.local/bin/cca && codesign -fs - ~/.local/bin/cca
+```
+
 Building from source needs [Bun](https://bun.sh):
 
 ```bash
