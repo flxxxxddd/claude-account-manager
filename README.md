@@ -1,0 +1,238 @@
+# cca — Claude account manager
+
+Switch between several Claude.ai accounts in Claude Code without logging out and back
+in, see how much of each account's session window is left, and open a session window
+when it suits your day.
+
+```
+$ cca list
+  NAME         ACCOUNT                SESSION (5h)              WEEK           MODE
+● personal     me@example.com         ███░░░░░░░  25% ↻00:50     32% ↻5d4h     shared
+○ work         me@company.com         ████████░░  82% ↻03:15     61% ↻2d1h     shared
+
+$ cca
+┌ Launch Claude Code as ─────────────────────────────────────┐
+│ ▸ ● personal   me@example.com   ███░░░░░░░  25% ↻00:50      │
+│     work       me@company.com   ████████░░  82% ↻03:15      │
+└────────────────────────────────────────────────────────────┘
+```
+
+## Why this works
+
+Claude Code namespaces its credential storage by a hash of its effective config
+directory. From the v2.1.246 binary:
+
+```js
+function v(n = "") {
+  let e = process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR,
+      t = e !== undefined ? !e : !process.env.CLAUDE_CONFIG_DIR,
+      r = e !== undefined ? e.normalize("NFC") : configDir(),
+      s = t ? "" : `-${sha256(r).digest("hex").substring(0, 8)}`;
+  return `Claude Code${OAUTH_FILE_SUFFIX}${n}${s}`;
+}
+```
+
+Point Claude Code at a different storage directory and it transparently reads a
+different credential slot. That is the whole mechanism — no credential shuffling
+between logins, no patched binaries, no polling a login page.
+
+Two environment variables control it, and they give two different kinds of separation:
+
+| Variable | What is separated | What stays shared |
+| --- | --- | --- |
+| `CLAUDE_SECURESTORAGE_CONFIG_DIR` | credentials only | history, projects, `settings.json`, plugins, MCP servers |
+| `CLAUDE_CONFIG_DIR` | everything | nothing |
+
+`cca` defaults to the first (`--shared`), because for two personal accounts you almost
+always want one shared history and one shared set of plugins. Pass `--isolated` per
+profile when you want a hard wall instead.
+
+## Install
+
+```bash
+npm install -g claude-account-manager
+```
+
+Or grab a standalone binary from the [releases page](../../releases) — it bundles its
+own runtime and needs nothing else installed.
+
+Building from source needs [Bun](https://bun.sh):
+
+```bash
+bun install
+bun run build            # → dist/cli.js, the Node bundle npm ships
+bun run build:binaries   # → dist/bin/, standalone binaries for every platform
+```
+
+## Getting started
+
+```bash
+cca import              # adopt the account you are already logged into
+cca login work          # add the second account (opens the normal Claude login)
+cca                     # pick one and launch
+```
+
+`cca import` copies your existing session into a profile. It does not move or delete
+anything, so a plain `claude` keeps working exactly as before.
+
+### Make `claude` itself show the picker
+
+```bash
+cca shell-init fish >> ~/.config/fish/config.fish   # or zsh / bash / pwsh
+```
+
+Now `claude` shows the account picker, and `claude --resume` and every other flag pass
+straight through. `cca run --last` skips the picker when you just want the last account.
+
+## Session warm-up
+
+A Claude subscription's session window opens at your **first request** and runs for five
+hours. If you start work at 09:00 the window ends at 14:00, and a late-morning start
+pushes the reset into the evening.
+
+Warming sends one minimal Haiku request (22 input tokens, 1 output token) at a time you
+choose, so the window opens — and therefore resets — when you want it to.
+
+```bash
+cca warm                            # open the active account's window now
+cca warm --all
+cca warmup smart                    # warm each account as soon as its window resets
+cca warmup schedule --at 08:00,13:00
+cca daemon install                  # register launchd / systemd / Task Scheduler
+cca daemon status
+```
+
+This shifts *when* your window runs. It does not add quota, and it is an ordinary
+API request billed against the account's normal allowance.
+
+`cca daemon install` registers a scheduler entry that runs `cca daemon tick` on an
+interval; the tick decides what is due. There is no long-lived process to supervise, and
+a missed tick only means a late warm-up.
+
+### Keeping idle accounts alive
+
+Refresh tokens expire after roughly 27 days, so an account you have not touched in a
+month would otherwise need a full re-login. The daemon rotates tokens twice a day when
+`refreshTokens` is on (the default); `cca refresh --all` does it by hand.
+
+## Statusline
+
+Add the active account and its session usage to Claude Code's status line:
+
+```json
+{
+  "statusLine": { "type": "command", "command": "cca statusline" }
+}
+```
+
+```
+● personal 25% ↻00:50
+```
+
+Claude Code renders the status line on every turn, so this path never blocks on the
+network: it prints from a cache and refreshes it in the background.
+
+## The `/account` command
+
+Install the plugin to get `/account` inside Claude Code:
+
+```
+/plugin marketplace add flxxxxddd/claude-account-manager
+/plugin install claude-account-manager
+```
+
+```
+/account              # active account and limits, explained
+/account use work     # switch the account the next launch will use
+/account warm all
+```
+
+**A switch takes effect on the next launch.** Claude Code reads credentials once at
+startup, so nothing can move a running session to a different account.
+
+## Command reference
+
+| Command | What it does |
+| --- | --- |
+| `cca` | pick an account and launch Claude Code |
+| `cca run <name> -- <args>` | launch a specific account, forwarding arguments |
+| `cca run --last` / `--best` | skip the picker; `--best` takes the most quota left |
+| `cca list [--json]` | accounts with live limits |
+| `cca status [name] [--json]` | detail for one account |
+| `cca use <name>` | set the active account |
+| `cca import [name]` | adopt the session you are already logged into |
+| `cca login <name>` | add an account |
+| `cca remove <name> [--purge]` | forget an account |
+| `cca rename <old> <new>` | rename a profile |
+| `cca sync <name>` | refresh cached email and organisation |
+| `cca warm [name\|--all]` | open the session window |
+| `cca refresh [name\|--all]` | rotate OAuth tokens |
+| `cca warmup <on\|off\|smart\|schedule>` | configure warm-up |
+| `cca daemon <install\|uninstall\|status\|tick>` | scheduler |
+| `cca shell-init <shell>` | shell snippet for the picker |
+| `cca statusline` | status line output |
+| `cca doctor [--deep]` | verify the setup |
+
+## Where things live
+
+```
+~/.ccacc/config.json              profiles and warm-up settings
+~/.ccacc/profiles/<name>/         one credential storage directory per account
+~/.ccacc/cache/usage.json         cached limits for the status line
+~/.ccacc/state/daemon.json        what the scheduler has already done
+```
+
+`CCA_HOME` moves all of it. `CCA_CLAUDE_BIN` points at a different `claude` binary.
+
+## Credential storage
+
+`cca` writes credentials where Claude Code reads them, per platform:
+
+| Platform | Storage |
+| --- | --- |
+| macOS | reads Keychain then `<dir>/.credentials.json`, writes the file (mode `600`) |
+| Linux | `<dir>/.credentials.json` (mode `600`) |
+| Windows | Credential Manager, falling back to the file when unavailable |
+
+On macOS Claude Code reads the Keychain first and falls back to the file, but writes the
+Keychain through a native binding — the binary has no `add-generic-password` call. The
+`security` CLI truncates a piped secret at 128 bytes and otherwise needs it in `argv`,
+and a real credential blob is around 11 KB, so `cca` writes the file and clears the
+profile's Keychain entry to keep the file authoritative. Claude Code migrates it back
+into the Keychain on its next token refresh, and `cca` reads Keychain-first so it always
+sees whichever copy is current.
+
+`cca` never writes to the default credential slot — the one a plain `claude` login owns.
+Profiles always get their own directory.
+
+## Verifying it works
+
+```bash
+cca doctor --deep
+```
+
+`--deep` runs `claude auth status` under each profile's environment and checks that
+Claude Code reports the account the profile claims:
+
+```
+✓ claude CLI on PATH — 2.1.246 (Claude Code)
+✓ credential backend — keychain
+✓ default Claude Code session — present (Claude Code-credentials)
+✓ profile personal: credentials — Claude Code-credentials-c8537f02
+✓ profile personal: Claude Code agrees — claude sees me@example.com
+```
+
+## Caveats
+
+- **Switching is per-launch.** Credentials are read at startup; a running session keeps
+  the account it started with.
+- **Claude Code is a moving target.** `cca` depends on how v2.1.246 addresses credential
+  storage. If a future release changes that, `cca doctor --deep` is what tells you, and
+  the golden-value tests in `src/cc-paths.test.ts` are what fail in CI.
+- **Warm-up spends a little quota.** One Haiku request per warm — negligible, but not
+  free, and it cannot enlarge a limit.
+- **One account per launch.** Running two accounts at once means two terminals.
+
+## Licence
+
+MIT

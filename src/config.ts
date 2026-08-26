@@ -1,0 +1,115 @@
+/** The manager's own state: ~/.ccacc/config.json plus per-profile dirs. */
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { IsolationMode } from "./cc-paths.ts";
+
+export const CCA_HOME = process.env.CCA_HOME || join(homedir(), ".ccacc");
+export const CONFIG_PATH = join(CCA_HOME, "config.json");
+export const PROFILES_DIR = join(CCA_HOME, "profiles");
+
+export interface Profile {
+  /** "shared" keeps history/settings/plugins in ~/.claude; only creds differ. */
+  mode: IsolationMode;
+  /** Storage directory handed to Claude Code via env. */
+  dir: string;
+  email?: string;
+  accountUuid?: string;
+  organizationName?: string;
+  subscriptionType?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  /** Optional per-profile colour/label for the picker and statusline. */
+  label?: string;
+}
+
+export type WarmupMode = "off" | "schedule" | "smart";
+
+export interface WarmupConfig {
+  enabled: boolean;
+  mode: WarmupMode;
+  /** Local wall-clock times for "schedule" mode, e.g. ["08:00"]. */
+  at: string[];
+  /** Empty means every profile. */
+  profiles: string[];
+  model: string;
+  /** Keep idle profiles' refresh tokens alive (~27 day expiry). */
+  refreshTokens: boolean;
+  /** "smart" mode poll interval, minutes. */
+  pollMinutes: number;
+}
+
+export interface Config {
+  version: 1;
+  activeProfile?: string;
+  profiles: Record<string, Profile>;
+  warmup: WarmupConfig;
+}
+
+export const DEFAULT_WARMUP: WarmupConfig = {
+  enabled: false,
+  mode: "smart",
+  at: ["08:00"],
+  profiles: [],
+  model: "claude-haiku-4-5-20251001",
+  refreshTokens: true,
+  pollMinutes: 5,
+};
+
+const EMPTY: Config = { version: 1, profiles: {}, warmup: { ...DEFAULT_WARMUP } };
+
+export async function loadConfig(): Promise<Config> {
+  let raw: string;
+  try {
+    raw = await readFile(CONFIG_PATH, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return structuredClone(EMPTY);
+    throw err;
+  }
+  const parsed = JSON.parse(raw) as Partial<Config>;
+  return {
+    version: 1,
+    activeProfile: parsed.activeProfile,
+    profiles: parsed.profiles ?? {},
+    warmup: { ...DEFAULT_WARMUP, ...(parsed.warmup ?? {}) },
+  };
+}
+
+export async function saveConfig(config: Config): Promise<void> {
+  await mkdir(CCA_HOME, { recursive: true, mode: 0o700 });
+  const tmp = `${CONFIG_PATH}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await rename(tmp, CONFIG_PATH);
+}
+
+export function profileDir(name: string): string {
+  return join(PROFILES_DIR, name);
+}
+
+export async function ensureProfileDir(name: string): Promise<string> {
+  const dir = profileDir(name);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
+/** Profile names double as directory names, so keep them boring. */
+export function validateProfileName(name: string): void {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/.test(name)) {
+    throw new Error(
+      `invalid profile name "${name}" — use letters, digits, dot, dash or underscore`,
+    );
+  }
+}
+
+export function requireProfile(config: Config, name: string): Profile {
+  const profile = config.profiles[name];
+  if (!profile) {
+    const known = Object.keys(config.profiles);
+    throw new Error(
+      known.length
+        ? `no profile "${name}" — known profiles: ${known.join(", ")}`
+        : `no profile "${name}" — run \`cca import\` to add your current session`,
+    );
+  }
+  return profile;
+}

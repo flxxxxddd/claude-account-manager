@@ -1,0 +1,48 @@
+{
+  "name": "claude-account-manager",
+  "version": "0.1.0",
+  "description": "Switch between multiple Claude.ai accounts in Claude Code without re-logging in, with live rate-limit visibility and session warm-up.",
+  "type": "module",
+  "bin": {
+    "cca": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "plugin",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "bun build src/cli.ts --target=node --outfile dist/cli.js && chmod +x dist/cli.js",
+    "build:all": "bun run scripts/build-all.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build:binaries": "bun run scripts/build-all.ts",
+    "prepublishOnly": "bun run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "bun-types": "^1.4.0",
+    "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flxxxxddd/claude-account-manager.git"
+  },
+  "homepage": "https://github.com/flxxxxddd/claude-account-manager#readme",
+  "bugs": {
+    "url": "https://github.com/flxxxxddd/claude-account-manager/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "accounts",
+    "multi-account",
+    "cli",
+    "rate-limits"
+  ]
+}

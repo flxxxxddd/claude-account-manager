@@ -1,0 +1,15 @@
+{
+  "name": "claude-account-manager",
+  "owner": { "name": "claude-account-manager contributors" },
+  "metadata": {
+    "description": "Multi-account tooling for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-account-manager",
+      "source": "./plugin",
+      "description": "Switch between multiple Claude.ai accounts and see live session limits without leaving Claude Code."
+    }
+  ]
+}
