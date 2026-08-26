@@ -222,6 +222,35 @@ without it a single warm-up would be announced until the window closed.
 macOS uses `osascript`, Linux `notify-send`, Windows PowerShell. Nothing is
 installed; a platform missing its tool simply gets no notification.
 
+## Where the quota goes
+
+```bash
+cca stats             # last 7 days, every account
+cca stats work --days 30 --json
+```
+
+```
+work · last 7 days
+  windows  9 seen · peak 38% avg · 67% worst
+  by hour  ▄▃▃▁▁▁▁▁▁▁▁▃▆▄▆▆▆▆███▃▂▄
+           0h        6h        12h       18h    23h
+  recent
+    Aug 26 16:24    ████████░░░░ 67%
+    Aug 26 11:24    █████░░░░░░░ 42%
+```
+
+Built from readings the status line already took, so it costs no requests and
+works offline. Two things a single percentage cannot tell you: how close a
+normal window gets to the ceiling, and which hours the quota actually goes in —
+useful for picking warm-up times that land a fresh window where you need it.
+
+Windows are grouped by their reset timestamp rather than by a time range, so a
+gap when Claude Code was closed does not split one window into two. Only rises
+count toward an hour's burn: a reset shows up as utilisation dropping, and
+counting that would cancel out real usage elsewhere in the day.
+
+History lives in `~/.ccacc/history/<name>.jsonl` and is kept for 60 days.
+
 ## The `/account` command
 
 Install the plugin to get `/account` inside Claude Code:
@@ -249,6 +278,7 @@ startup, so nothing can move a running session to a different account.
 | `cca run --last` / `--best` | skip the picker; `--best` takes the most quota left |
 | `cca list [--json]` | accounts with live limits |
 | `cca status [name] [--json]` | detail for one account |
+| `cca stats [name] [--days N] [--json]` | usage history and burn by hour |
 | `cca use <name>` | set the active account |
 | `cca import [name]` | adopt the session you are already logged into |
 | `cca login <name>` | add an account |
@@ -272,6 +302,7 @@ startup, so nothing can move a running session to a different account.
 ~/.ccacc/cache/usage/<name>.json  cached limits, one file per account
 ~/.ccacc/cache/burn.json          usage samples behind the burn-rate projection
 ~/.ccacc/cache/last-payload.json  last status-line frame, for `--preview`
+~/.ccacc/history/<name>.jsonl     usage readings behind `cca stats`
 ~/.ccacc/state/daemon.json        what the scheduler has already done
 ```
 

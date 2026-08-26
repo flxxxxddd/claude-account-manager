@@ -7,11 +7,14 @@
  * the life of the window turns it into arithmetic: fit a rate, extend it to
  * 100%, and compare that moment with the reset.
  */
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CCA_HOME } from "../config.ts";
 
 const BURN_PATH = join(CCA_HOME, "cache", "burn.json");
+const HISTORY_DIR = join(CCA_HOME, "history");
+/** How much history `cca stats` can look back over. */
+const HISTORY_KEEP_MS = 60 * 86_400_000;
 
 /** Two samples closer than this add noise, not signal. */
 const MIN_SAMPLE_GAP_MS = 20_000;
@@ -134,6 +137,66 @@ function slopePerMinute(samples: Sample[]): number {
   return (n * sumXY - sumX * sumY) / denominator;
 }
 
+export interface HistoryPoint extends Sample {
+  /** The window this reading belongs to, so windows can be told apart. */
+  w: number | null;
+}
+
+function historyPath(profile: string): string {
+  return join(HISTORY_DIR, `${profile}.jsonl`);
+}
+
+/**
+ * Append a reading to the profile's long history.
+ *
+ * The rolling buffer above is deliberately small and resets every window,
+ * because a projection should not be dragged around by yesterday. `cca stats`
+ * wants the opposite, so the same readings are also appended here, where they
+ * outlive the window that produced them.
+ */
+async function appendHistory(profile: string, point: HistoryPoint): Promise<void> {
+  try {
+    await mkdir(HISTORY_DIR, { recursive: true, mode: 0o700 });
+    await appendFile(historyPath(profile), `${JSON.stringify(point)}\n`, { mode: 0o600 });
+  } catch {
+    // History is a convenience; losing a line must not disturb a render.
+  }
+}
+
+export async function readHistory(profile: string): Promise<HistoryPoint[]> {
+  let raw: string;
+  try {
+    raw = await readFile(historyPath(profile), "utf8");
+  } catch {
+    return [];
+  }
+  const points: HistoryPoint[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      points.push(JSON.parse(line) as HistoryPoint);
+    } catch {
+      // A truncated final line from an interrupted append.
+    }
+  }
+  return points;
+}
+
+/** Drop history past the retention window; done when a window rolls over. */
+async function pruneHistory(profile: string, now: number): Promise<void> {
+  try {
+    const kept = (await readHistory(profile)).filter((p) => now - p.t <= HISTORY_KEEP_MS);
+    const path = historyPath(profile);
+    const tmp = `${path}.tmp`;
+    await writeFile(tmp, kept.map((p) => JSON.stringify(p)).join("\n") + (kept.length ? "\n" : ""), {
+      mode: 0o600,
+    });
+    await rename(tmp, path);
+  } catch {
+    // Housekeeping only.
+  }
+}
+
 /** Record a reading and project from the resulting history. */
 export async function trackAndProject(
   profile: string,
@@ -144,9 +207,17 @@ export async function trackAndProject(
   if (utilization === null || utilization === undefined) return null;
 
   const data = await readBurn();
+  const previousWindow = data[profile]?.window;
   const { entry, changed } = foldSample(data[profile], utilization, resetsAt, now);
   data[profile] = entry;
-  if (changed) await writeBurn(data);
+  if (changed) {
+    await writeBurn(data);
+    await appendHistory(profile, { t: now, u: utilization, w: resetsAt });
+    // A rolled-over window is a rare, natural moment to tidy up.
+    if (previousWindow !== undefined && previousWindow !== resetsAt) {
+      await pruneHistory(profile, now);
+    }
+  }
 
   return project(entry.samples, resetsAt, now);
 }

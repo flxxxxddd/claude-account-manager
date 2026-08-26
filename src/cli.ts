@@ -18,6 +18,7 @@ import {
   useCommand,
 } from "./commands/profiles.ts";
 import { runCommand, statusCommand } from "./commands/run.ts";
+import { statsCommand } from "./commands/stats.ts";
 import { shellInitCommand } from "./commands/shell.ts";
 import { notifyCommand } from "./commands/notify.ts";
 import { refreshUsageCache, statuslineCommand } from "./commands/statusline.ts";
@@ -62,7 +63,7 @@ function parseArgs(argv: string[]): Args {
   return { command: positional[0] ?? "", positional: positional.slice(1), flags, passthrough };
 }
 
-const VALUE_FLAGS = new Set(["model", "at", "profiles", "poll", "interval", "mode", "name"]);
+const VALUE_FLAGS = new Set(["model", "at", "profiles", "poll", "interval", "mode", "name", "days"]);
 
 function splitFlag(token: string): [string, string | undefined] {
   const eq = token.indexOf("=");
@@ -178,6 +179,13 @@ async function main(argv: string[]): Promise<number> {
 
     case "daemon":
       return daemonCommand(config, args);
+
+    case "stats":
+      return statsCommand(config, {
+        name: args.positional[0],
+        days: Number(flagString(args, "days")) || undefined,
+        json: flagBool(args, "json"),
+      });
 
     case "notify": {
       const sub = args.positional[0] ?? "status";
@@ -305,6 +313,7 @@ ${c.bold("Everyday")}
   cca run --best            use whichever account has the most quota left
   cca list                  accounts with live session limits
   cca status [name]         detail for one account
+  cca stats [name]          where the quota went   ${c.gray("--days 30 --json")}
   cca use <name>            set the active account
 
 ${c.bold("Accounts")}
