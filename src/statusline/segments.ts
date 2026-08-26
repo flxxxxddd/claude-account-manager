@@ -21,7 +21,10 @@ export interface Window {
 export interface OtherAccount {
   name: string;
   label: string;
+  /** Five-hour utilisation — what the segment shows. */
   utilization: number | null;
+  /** Highest utilisation across every window — what the hint decides on. */
+  binding: number | null;
   resetsAt: number | null;
   stale: boolean;
 }
@@ -33,6 +36,8 @@ export interface RenderContext {
   activeProfile: Profile | null;
   fiveHour: Window;
   sevenDay: Window;
+  /** Highest utilisation across the active account's windows. */
+  binding: number | null;
   projection: Projection | null;
   others: OtherAccount[];
   git: GitState | null;
@@ -78,14 +83,17 @@ const SWITCH_PRESSURE = 70;
  * an hour ago is worse than suggesting nothing.
  */
 function betterAccount(ctx: RenderContext): string | null {
-  const current = ctx.fiveHour.utilization;
+  // Both sides are judged on their binding window. Comparing five-hour figures
+  // would happily send you to an account that is idle this hour and spent for
+  // the week.
+  const current = ctx.binding;
   if (current === null || current < SWITCH_PRESSURE) return null;
 
   let best: OtherAccount | null = null;
   for (const other of ctx.others) {
-    if (other.stale || other.utilization === null) continue;
-    if (other.utilization > current - SWITCH_ADVANTAGE) continue;
-    if (!best || other.utilization < best.utilization!) best = other;
+    if (other.stale || other.binding === null) continue;
+    if (other.binding > current - SWITCH_ADVANTAGE) continue;
+    if (!best || other.binding < best.binding!) best = other;
   }
   return best?.name ?? null;
 }

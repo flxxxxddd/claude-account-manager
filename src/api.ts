@@ -28,6 +28,21 @@ export interface UsageSnapshot {
   [key: string]: unknown;
 }
 
+/**
+ * The utilisation that will actually stop you: the highest of every window the
+ * account reports.
+ *
+ * Ranking accounts on the five-hour window alone picks one that is idle this
+ * hour but spent for the week, which hits a wall within a couple of requests.
+ */
+export function bindingUtilization(usage: UsageSnapshot | null | undefined): number | null {
+  if (!usage) return null;
+  const reported = [usage.five_hour, usage.seven_day, usage.seven_day_opus]
+    .map((window) => window?.utilization)
+    .filter((value): value is number => typeof value === "number");
+  return reported.length ? Math.max(...reported) : null;
+}
+
 export class AuthExpiredError extends Error {
   constructor(message = "access token rejected — the profile needs a refresh or re-login") {
     super(message);

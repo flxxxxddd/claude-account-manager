@@ -9,7 +9,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fetchUsage, type UsageSnapshot } from "../api.ts";
+import { bindingUtilization, fetchUsage, type UsageSnapshot } from "../api.ts";
 import { CCA_HOME, loadConfig, type Config, type Profile } from "../config.ts";
 import { accessTokenFor } from "../session.ts";
 import { c, setColor } from "../ui.ts";
@@ -136,6 +136,7 @@ export async function statuslineCommand(
     activeProfile,
     fiveHour,
     sevenDay,
+    binding: highest(fiveHour.utilization, sevenDay.utilization),
     projection,
     others,
     git,
@@ -150,6 +151,11 @@ export async function statuslineCommand(
 }
 
 const EMPTY_WINDOW: Window = { utilization: null, resetsAt: null };
+
+function highest(...values: (number | null)[]): number | null {
+  const known = values.filter((value): value is number => value !== null);
+  return known.length ? Math.max(...known) : null;
+}
 
 export function windowsFromPayload(payload: StatuslinePayload | null): {
   fiveHour: Window | null;
@@ -211,6 +217,7 @@ function collectOthers(
         name,
         label: profile.label ?? name,
         utilization: window.utilization,
+        binding: bindingUtilization(entry?.usage),
         resetsAt: window.resetsAt,
         stale: !entry || now - entry.fetchedAt > STALE_MS,
       };

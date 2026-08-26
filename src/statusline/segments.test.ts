@@ -21,6 +21,7 @@ function context(overrides: Partial<RenderContext> = {}): RenderContext {
     activeProfile: null,
     fiveHour: { utilization: 20, resetsAt: NOW + 3_600_000 },
     sevenDay: { utilization: 10, resetsAt: NOW + 86_400_000 },
+    binding: 20,
     projection: null,
     others: [],
     git: null,
@@ -36,6 +37,7 @@ function other(overrides: Partial<OtherAccount> = {}): OtherAccount {
     name: "personal",
     label: "personal",
     utilization: 5,
+    binding: 5,
     resetsAt: NOW + 7_200_000,
     stale: false,
     ...overrides,
@@ -51,45 +53,56 @@ describe("switch hint", () => {
   const render = (ctx: RenderContext) => stripAnsi(segments.others!(ctx) ?? "");
 
   test("marks the roomier account once the current one is under pressure", () => {
-    const line = render(context({ fiveHour: { utilization: 85, resetsAt: NOW }, others: [other()] }));
+    const line = render(context({ binding: 85, others: [other()] }));
     expect(line).toContain("↦ personal");
   });
 
   test("stays quiet while the current account has room", () => {
-    const line = render(context({ fiveHour: { utilization: 40, resetsAt: NOW }, others: [other()] }));
+    const line = render(context({ binding: 40, others: [other()] }));
     expect(line).toContain("○ personal");
     expect(line).not.toContain("↦");
   });
 
   test("does not suggest an account that is barely better", () => {
-    const line = render(
-      context({
-        fiveHour: { utilization: 85, resetsAt: NOW },
-        others: [other({ utilization: 70 })],
-      }),
-    );
+    const line = render(context({ binding: 85, others: [other({ utilization: 70, binding: 70 })] }));
     expect(line).not.toContain("↦");
   });
 
   test("never suggests a switch on a stale reading", () => {
-    const line = render(
-      context({
-        fiveHour: { utilization: 85, resetsAt: NOW },
-        others: [other({ stale: true })],
-      }),
-    );
+    const line = render(context({ binding: 85, others: [other({ stale: true })] }));
     expect(line).not.toContain("↦");
   });
 
   test("picks the roomiest of several alternatives", () => {
     const line = render(
       context({
-        fiveHour: { utilization: 95, resetsAt: NOW },
-        others: [other({ name: "a", label: "a", utilization: 40 }), other({ name: "b", label: "b", utilization: 5 })],
+        binding: 95,
+        others: [
+          other({ name: "a", label: "a", utilization: 40, binding: 40 }),
+          other({ name: "b", label: "b", utilization: 5, binding: 5 }),
+        ],
       }),
     );
     expect(line).toContain("↦ b");
     expect(line).toContain("○ a");
+  });
+
+  test("never sends you to an account that is idle this hour but spent for the week", () => {
+    // 2% of the session window left untouched is meaningless when the weekly
+    // quota behind it is all but gone.
+    const line = render(
+      context({ binding: 90, others: [other({ utilization: 2, binding: 97 })] }),
+    );
+    expect(line).not.toContain("↦");
+  });
+
+  test("pressure is judged on the weekly window too, not just the hour", () => {
+    // Comfortable for the hour, nearly out for the week: the alternative is
+    // still worth pointing at.
+    const line = render(
+      context({ fiveHour: { utilization: 12, resetsAt: NOW }, binding: 88, others: [other()] }),
+    );
+    expect(line).toContain("↦ personal");
   });
 });
 

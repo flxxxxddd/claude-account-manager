@@ -1,5 +1,6 @@
 /** A dependency-free arrow-key picker for choosing a profile. */
 import { bar, c, formatReset, formatUtilization, limitColor, pad, symbols } from "../ui.ts";
+import { bindingUtilization } from "../api.ts";
 import type { ProfileStatus } from "../session.ts";
 
 export interface PickerResult {
@@ -116,12 +117,21 @@ function renderLine(
 }
 
 /** Lowest 5-hour utilisation wins; unknown usage sorts last. */
+/**
+ * The account with the most headroom, judged by whichever of its windows is
+ * closest to full. An account idle for the hour but spent for the week is not
+ * a good answer to "which one should I use".
+ */
 export function bestByLimit(statuses: ProfileStatus[]): ProfileStatus | undefined {
   const usable = statuses.filter((s) => s.loggedIn);
   if (usable.length === 0) return undefined;
   return usable.reduce((best, current) => {
-    const a = best.usage?.five_hour?.utilization ?? Number.POSITIVE_INFINITY;
-    const b = current.usage?.five_hour?.utilization ?? Number.POSITIVE_INFINITY;
-    return b < a ? current : best;
+    const a = bindingUtilization(best.usage) ?? Number.POSITIVE_INFINITY;
+    const b = bindingUtilization(current.usage) ?? Number.POSITIVE_INFINITY;
+    if (b !== a) return b < a ? current : best;
+    // Same binding window: prefer the one with more of this hour left.
+    const aFive = best.usage?.five_hour?.utilization ?? Number.POSITIVE_INFINITY;
+    const bFive = current.usage?.five_hour?.utilization ?? Number.POSITIVE_INFINITY;
+    return bFive < aFive ? current : best;
   });
 }
