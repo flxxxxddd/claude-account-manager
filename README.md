@@ -124,8 +124,6 @@ month would otherwise need a full re-login. The daemon rotates tokens twice a da
 
 ## Statusline
 
-Add the active account and its session usage to Claude Code's status line:
-
 ```json
 {
   "statusLine": { "type": "command", "command": "cca statusline" }
@@ -133,11 +131,65 @@ Add the active account and its session usage to Claude Code's status line:
 ```
 
 ```
-● personal 25% ↻00:50
+● work pro │ 5h ████████▌░ 85% ↻40m  7d ██████░░░░ 61% ↻4d15h │ ⇗1.4%/m caps 00:49 │ ↦ personal 4%
+Opus 5 ·high ·think │ ctx ▊░░░░░░░░░ 8%/1M │ ⎇ main !5 ?2 │ $1.51 +412/-77 │ 5m
 ```
 
-Claude Code renders the status line on every turn, so this path never blocks on the
-network: it prints from a cache and refreshes it in the background.
+Three things there are not on any single-account status line:
+
+- **Every account at once.** `↦ personal 4%` is the other login's remaining quota. The
+  arrow replaces the bullet only when switching would actually help — the current
+  account is under pressure and that one has real room left.
+- **Burn rate.** `⇗1.4%/m caps 00:49` fits a rate to how fast the window is being spent
+  and extends it to 100%. It turns red when the cap lands *before* the reset, which is
+  the moment you want to know about in advance rather than discover.
+- **Colour that tracks the number**, green through orange to red, on both the bar and
+  the percentage.
+
+Claude Code hands the status line the active account's limits, context window and cost
+on stdin, so the everyday render makes no network call at all. Background accounts come
+from a cache that a detached child refills.
+
+### Layout
+
+Segments are configured in `~/.ccacc/config.json`, one list per rendered line. Delete
+what you do not want; unknown names are ignored:
+
+```json
+"statusline": {
+  "lines": [
+    ["account", "limits", "burn", "others"],
+    ["model", "ctx", "git", "cost", "uptime"]
+  ],
+  "barWidth": 10,
+  "barStyle": "blocks",
+  "color": "on"
+}
+```
+
+| Segment | Shows |
+| --- | --- |
+| `account` | active profile, plan, dot coloured by session usage |
+| `limits` | five-hour and seven-day bars with reset countdowns |
+| `burn` | projected time to the cap, red when it beats the reset |
+| `others` | the other accounts' usage, with the switch hint |
+| `model` | model, reasoning effort, thinking, fast mode, output style |
+| `ctx` | context window used, flagged when the window is 1M |
+| `git` | branch, ahead/behind, conflicted, modified, untracked |
+| `cost` | session cost and lines added or removed |
+| `uptime` | session duration |
+| `dir` | current directory name |
+| `warmup` | warm-up mode when enabled |
+| `version` | Claude Code version |
+
+`barStyle: "ascii"` swaps block glyphs for `#---`. `color: "off"` drops ANSI, as does
+`NO_COLOR`.
+
+Iterate on a layout without restarting Claude Code:
+
+```bash
+cca statusline --preview
+```
 
 ## The `/account` command
 
@@ -177,7 +229,7 @@ startup, so nothing can move a running session to a different account.
 | `cca warmup <on\|off\|smart\|schedule>` | configure warm-up |
 | `cca daemon <install\|uninstall\|status\|tick>` | scheduler |
 | `cca shell-init <shell>` | shell snippet for the picker |
-| `cca statusline` | status line output |
+| `cca statusline [--preview]` | status line output; `--preview` redraws the last frame |
 | `cca doctor [--deep]` | verify the setup |
 
 ## Where things live
@@ -185,7 +237,9 @@ startup, so nothing can move a running session to a different account.
 ```
 ~/.ccacc/config.json              profiles and warm-up settings
 ~/.ccacc/profiles/<name>/         one credential storage directory per account
-~/.ccacc/cache/usage.json         cached limits for the status line
+~/.ccacc/cache/usage/<name>.json  cached limits, one file per account
+~/.ccacc/cache/burn.json          usage samples behind the burn-rate projection
+~/.ccacc/cache/last-payload.json  last status-line frame, for `--preview`
 ~/.ccacc/state/daemon.json        what the scheduler has already done
 ```
 

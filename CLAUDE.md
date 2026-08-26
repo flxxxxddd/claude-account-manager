@@ -27,6 +27,7 @@ src/api.ts           /api/oauth/usage, /api/oauth/profile, token refresh, warm-u
 src/session.ts       token freshness, refresh-with-write-back, per-profile status
 src/config.ts        ~/.ccacc/config.json
 src/commands/        one file per command group
+src/statusline/      the HUD: stdin payload, segments, burn rate, git state
 src/tui/picker.ts    dependency-free arrow-key picker
 plugin/              the Claude Code plugin (/account, switching-accounts skill)
 ```
@@ -48,9 +49,20 @@ secret at 128 bytes and otherwise needs the secret in `argv`, and a credential b
 ~11 KB. So `darwinStore` writes the file and clears the profile's Keychain entry, and
 reads Keychain-first so it still sees credentials CC has since migrated.
 
-**The status line must not block.** `cca statusline` runs on every Claude Code turn. It
-prints from `~/.ccacc/cache/usage.json` and spawns a detached `cca cache-refresh` when
-that is stale. Keep it free of awaited network calls.
+**The status line must not block.** `cca statusline` runs on every Claude Code turn.
+The active account's limits, context window and cost arrive on stdin, so that account
+needs no network at all; other accounts print from `~/.ccacc/cache/usage/<name>.json`
+and a detached `cca cache-refresh` refills a stale one. Keep it free of awaited network
+calls, and free of awaited locks — a lock the refresh child holds across a fetch would
+stall every render waiting on it.
+
+**One cache file per profile, never a shared one.** Refreshes are independent detached
+children. A single `usage.json` makes every write a read-modify-write race, and the
+child that finishes second silently reverts the other's profile.
+
+**`rate_limits.*.resets_at` on stdin is in Unix seconds.** Everything else in this
+codebase is milliseconds. Reading it raw puts the reset in 1970 and the window renders
+as permanently expired; `windowsFromPayload` converts, and a test pins it.
 
 **Warm-up shifts a window, it does not enlarge a quota.** Say so in any user-facing text.
 It is an ordinary billed request.
