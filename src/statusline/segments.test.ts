@@ -29,6 +29,7 @@ function context(overrides: Partial<RenderContext> = {}): RenderContext {
     sevenDay: { utilization: 10, resetsAt: NOW + 86_400_000 },
     binding: 20,
     loginExpiresAt: null,
+    tools: null,
     projection: null,
     others: [],
     git: null,

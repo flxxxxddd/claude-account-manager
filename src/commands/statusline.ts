@@ -16,6 +16,7 @@ import { accessTokenFor } from "../session.ts";
 import { c, setColor } from "../ui.ts";
 import { trackAndProject } from "../statusline/burn.ts";
 import { readGitState } from "../statusline/git.ts";
+import { countTools } from "../statusline/tools.ts";
 import {
   cachePayload,
   readCachedPayload,
@@ -150,12 +151,15 @@ export async function statuslineCommand(
   // costs a file write and reading git costs a subprocess, and a HUD that has
   // switched those segments off should pay for neither.
   const enabled = new Set(config.statusline.lines.flat());
-  const [projection, git] = await Promise.all([
+  const [projection, git, tools] = await Promise.all([
     enabled.has("burn") && activeName
       ? trackAndProject(activeName, fiveHour.utilization, fiveHour.resetsAt, now)
       : null,
     enabled.has("git")
       ? readGitState(payload?.workspace?.current_dir ?? payload?.cwd ?? process.cwd())
+      : null,
+    enabled.has("tools")
+      ? countTools(payload?.session_id, payload?.transcript_path, now)
       : null,
   ]);
 
@@ -171,6 +175,7 @@ export async function statuslineCommand(
     projection,
     others,
     git,
+    tools,
     barWidth: Math.max(3, Math.min(40, config.statusline.barWidth)),
     barStyle: config.statusline.barStyle,
     now,

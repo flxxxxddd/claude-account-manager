@@ -52,6 +52,8 @@ export interface RenderContext {
   binding: number | null;
   /** When the active account's refresh token dies. */
   loginExpiresAt: number | null;
+  /** Tool calls so far this session, or null when not counted. */
+  tools: number | null;
   projection: Projection | null;
   others: OtherAccount[];
   git: GitState | null;
@@ -250,6 +252,10 @@ export const segments: Record<string, Segment> = {
     const removed = cost.total_lines_removed ?? 0;
     if (added || removed) parts.push(`${c.green(`+${added}`)}${c.gray("/")}${c.red(`-${removed}`)}`);
     return parts.length ? parts.join(" ") : null;
+  },
+
+  tools(ctx) {
+    return ctx.tools === null ? null : c.gray(`⚒${ctx.tools}`);
   },
 
   uptime(ctx) {

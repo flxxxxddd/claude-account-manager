@@ -166,7 +166,7 @@ what you do not want; unknown names are ignored:
 "statusline": {
   "lines": [
     ["account", "limits", "burn", "others", "login"],
-    ["model", "ctx", "git", "cost", "uptime"]
+    ["model", "ctx", "git", "cost", "tools", "uptime"]
   ],
   "barWidth": 10,
   "barStyle": "blocks",
@@ -185,6 +185,7 @@ what you do not want; unknown names are ignored:
 | `ctx` | context window used, flagged when the window is 1M |
 | `git` | branch, ahead/behind, conflicted, modified, untracked |
 | `cost` | session cost and lines added or removed |
+| `tools` | tool calls so far this session |
 | `uptime` | session duration |
 | `dir` | current directory name |
 | `warmup` | warm-up mode when enabled |

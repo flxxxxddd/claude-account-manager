@@ -59,7 +59,7 @@ export interface StatuslineConfig {
    * so trimming the HUD is a matter of deleting entries.
    *
    * Available: account, limits, burn, others, login, model, ctx, git, cost,
-   * uptime, dir, warmup, version.
+   * tools, uptime, dir, warmup, version.
    */
   lines: string[][];
   barWidth: number;
@@ -90,7 +90,7 @@ export const DEFAULT_WARMUP: WarmupConfig = {
 export const DEFAULT_STATUSLINE: StatuslineConfig = {
   lines: [
     ["account", "limits", "burn", "others", "login"],
-    ["model", "ctx", "git", "cost", "uptime"],
+    ["model", "ctx", "git", "cost", "tools", "uptime"],
   ],
   barWidth: 10,
   barStyle: "blocks",
