@@ -133,10 +133,38 @@ export async function loadConfig(): Promise<Config> {
   };
 }
 
+/** Key-order-independent comparison, for deciding what is worth writing. */
+function sameShape(a: unknown, b: unknown): boolean {
+  const stable = (value: unknown): string =>
+    JSON.stringify(value, (_key, inner) =>
+      inner && typeof inner === "object" && !Array.isArray(inner)
+        ? Object.fromEntries(Object.entries(inner as object).sort(([x], [y]) => x.localeCompare(y)))
+        : inner,
+    );
+  return stable(a) === stable(b);
+}
+
+/**
+ * Write the config, leaving out sections the user has not changed.
+ *
+ * Persisting a whole section of defaults freezes them: a later release that
+ * adds a status-line segment or a warm-up option would never reach anyone
+ * whose config had been written once — and every command that touches the
+ * config writes it. Omitting untouched sections keeps them following the
+ * defaults until the user actually has an opinion.
+ */
+export function serialisableConfig(config: Config): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...config };
+  if (sameShape(config.statusline, DEFAULT_STATUSLINE)) delete out.statusline;
+  if (sameShape(config.notifications, DEFAULT_NOTIFICATIONS)) delete out.notifications;
+  if (sameShape(config.warmup, DEFAULT_WARMUP)) delete out.warmup;
+  return out;
+}
+
 export async function saveConfig(config: Config): Promise<void> {
   await mkdir(CCA_HOME, { recursive: true, mode: 0o700 });
   const tmp = `${CONFIG_PATH}.tmp`;
-  await writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(tmp, `${JSON.stringify(serialisableConfig(config), null, 2)}\n`, { mode: 0o600 });
   await rename(tmp, CONFIG_PATH);
 }
 
