@@ -78,6 +78,23 @@ CLAUDE_SECURESTORAGE_CONFIG_DIR=/tmp/x claude auth status
 The second command is the ground truth for the whole project: if Claude Code reports the
 account you expect under a profile's environment, the addressing is right.
 
+## Commits
+
+Conventional Commits, and **never** a `Co-authored-by` trailer or any other
+attribution footer — commits are authored by `flxxxxddd <flxxd@lunaria.land>` alone.
+
+```
+<type>(<optional scope>): <subject in the imperative, lowercase, no full stop>
+
+<body: what changed and why, wrapped at ~80 columns>
+```
+
+Types in use: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`.
+Scope is the area touched — `api`, `store`, `test`, `daemon` — and is optional.
+
+One logical change per commit. A bug fix and a new skill are two commits, even when
+the same working session produced both.
+
 ## Style
 
 Match the surrounding code: named exports, `.ts` import extensions, `type` imports where
