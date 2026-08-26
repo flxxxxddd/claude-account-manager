@@ -6,7 +6,15 @@
  * at a time that suits the day — it shifts *when* the window runs, it does not
  * enlarge the quota.
  */
-import { AuthExpiredError, fetchUsage, oauthOf, refreshTokenExpired, refreshTokens, warmSession } from "../api.ts";
+import {
+  AuthExpiredError,
+  bindingUtilization,
+  fetchUsage,
+  oauthOf,
+  refreshTokenExpired,
+  refreshTokens,
+  warmSession,
+} from "../api.ts";
 import { requireProfile, saveConfig, type Config, type Profile } from "../config.ts";
 import { withLock } from "../lock.ts";
 import { accessTokenFor, NotLoggedInError } from "../session.ts";
@@ -27,6 +35,15 @@ export interface WarmOutcome {
   status: "warmed" | "already-open" | "skipped" | "failed";
   detail?: string;
   resetsAt?: string | null;
+  /**
+   * Utilisation across the account's windows, and when its login lapses.
+   *
+   * Both are already in hand here — the warm-up reads the credentials and
+   * fetches usage regardless — so carrying them out costs nothing and saves
+   * the scheduler from asking again on its own.
+   */
+  utilization?: number | null;
+  loginExpiresAt?: number;
   inputTokens?: number;
   outputTokens?: number;
 }
@@ -69,6 +86,8 @@ export async function warmProfile(
           name,
           status: "already-open",
           resetsAt: usage.five_hour?.resets_at ?? null,
+          utilization: bindingUtilization(usage),
+          loginExpiresAt: oauth.refreshTokenExpiresAt,
         };
       }
     }
@@ -79,6 +98,8 @@ export async function warmProfile(
       name,
       status: "warmed",
       resetsAt: usage.five_hour?.resets_at ?? null,
+      utilization: bindingUtilization(usage),
+      loginExpiresAt: oauth.refreshTokenExpiresAt,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
     };

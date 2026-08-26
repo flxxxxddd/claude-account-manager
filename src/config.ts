@@ -39,6 +39,18 @@ export interface WarmupConfig {
   pollMinutes: number;
 }
 
+export interface NotificationConfig {
+  enabled: boolean;
+  /** A fresh session window opened after a warm-up. */
+  onWarm: boolean;
+  /** The account in use is nearly spent and another one has room. */
+  onLimit: boolean;
+  /** A login is about to lapse and only a browser can renew it. */
+  onLoginExpiry: boolean;
+  /** Utilisation, in percent, at which `onLimit` fires. */
+  limitThreshold: number;
+}
+
 export type BarStyle = "blocks" | "ascii";
 
 export interface StatuslineConfig {
@@ -62,6 +74,7 @@ export interface Config {
   profiles: Record<string, Profile>;
   warmup: WarmupConfig;
   statusline: StatuslineConfig;
+  notifications: NotificationConfig;
 }
 
 export const DEFAULT_WARMUP: WarmupConfig = {
@@ -84,11 +97,21 @@ export const DEFAULT_STATUSLINE: StatuslineConfig = {
   color: "on",
 };
 
+/** Off by default: a tool that starts popping up windows unasked is a nuisance. */
+export const DEFAULT_NOTIFICATIONS: NotificationConfig = {
+  enabled: false,
+  onWarm: true,
+  onLimit: true,
+  onLoginExpiry: true,
+  limitThreshold: 90,
+};
+
 const EMPTY: Config = {
   version: 1,
   profiles: {},
   warmup: { ...DEFAULT_WARMUP },
   statusline: structuredClone(DEFAULT_STATUSLINE),
+  notifications: { ...DEFAULT_NOTIFICATIONS },
 };
 
 export async function loadConfig(): Promise<Config> {
@@ -106,6 +129,7 @@ export async function loadConfig(): Promise<Config> {
     profiles: parsed.profiles ?? {},
     warmup: { ...DEFAULT_WARMUP, ...(parsed.warmup ?? {}) },
     statusline: { ...structuredClone(DEFAULT_STATUSLINE), ...(parsed.statusline ?? {}) },
+    notifications: { ...DEFAULT_NOTIFICATIONS, ...(parsed.notifications ?? {}) },
   };
 }
 

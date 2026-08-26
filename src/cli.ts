@@ -19,6 +19,7 @@ import {
 } from "./commands/profiles.ts";
 import { runCommand, statusCommand } from "./commands/run.ts";
 import { shellInitCommand } from "./commands/shell.ts";
+import { notifyCommand } from "./commands/notify.ts";
 import { refreshUsageCache, statuslineCommand } from "./commands/statusline.ts";
 import { configureWarmup, refreshCommand, warmCommand } from "./commands/warm.ts";
 import { c } from "./ui.ts";
@@ -178,6 +179,15 @@ async function main(argv: string[]): Promise<number> {
     case "daemon":
       return daemonCommand(config, args);
 
+    case "notify": {
+      const sub = args.positional[0] ?? "status";
+      if (sub !== "on" && sub !== "off" && sub !== "test" && sub !== "status") {
+        process.stderr.write(`Usage: ${c.bold("cca notify <on|off|test>")}\n`);
+        return 1;
+      }
+      return notifyCommand(config, sub);
+    }
+
     case "statusline":
       return statuslineCommand(config, { preview: flagBool(args, "preview") });
 
@@ -312,6 +322,7 @@ ${c.bold("Session warm-up")}
   cca warmup off
   cca daemon install        register the OS scheduler   ${c.gray("--interval <minutes>")}
   cca daemon uninstall | status | tick
+  cca notify on|off|test    desktop alerts for warm-ups, limits and expiring logins
 
 ${c.bold("Integration")}
   cca shell-init fish       shell snippet so plain \`claude\` shows the picker

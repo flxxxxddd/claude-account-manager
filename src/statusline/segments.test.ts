@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_STATUSLINE, DEFAULT_WARMUP, type Config } from "../config.ts";
+import {
+  DEFAULT_NOTIFICATIONS,
+  DEFAULT_STATUSLINE,
+  DEFAULT_WARMUP,
+  type Config,
+} from "../config.ts";
 import { stripAnsi } from "../ui.ts";
 import { renderLines } from "./render.ts";
 import { segments, type OtherAccount, type RenderContext } from "./segments.ts";
@@ -13,6 +18,7 @@ function context(overrides: Partial<RenderContext> = {}): RenderContext {
     profiles: {},
     warmup: { ...DEFAULT_WARMUP },
     statusline: structuredClone(DEFAULT_STATUSLINE),
+    notifications: { ...DEFAULT_NOTIFICATIONS },
   };
   return {
     config,

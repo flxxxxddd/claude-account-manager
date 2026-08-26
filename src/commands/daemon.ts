@@ -10,7 +10,8 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { CCA_HOME, loadConfig, type Config, type Profile } from "../config.ts";
-import { c, symbols } from "../ui.ts";
+import { notify, type Notification } from "../notify.ts";
+import { c, formatDeadline, formatReset, LOGIN_WARN_MS, symbols } from "../ui.ts";
 import { refreshProfile, warmProfile, type WarmOutcome } from "./warm.ts";
 
 const STATE_DIR = join(CCA_HOME, "state");
@@ -24,9 +25,20 @@ interface DaemonState {
   /** Schedule slots already fired today, as "YYYY-MM-DD HH:MM". */
   firedSlots: string[];
   lastRefreshAt?: string;
+  /**
+   * Keys of notifications already sent.
+   *
+   * The tick runs every few minutes and sees the same state each time, so
+   * without this a single event would be announced until it stopped being
+   * true — which is how people learn to turn notifications off.
+   */
+  notified?: string[];
 }
 
-const EMPTY_STATE: DaemonState = { lastWarm: {}, firedSlots: [] };
+const EMPTY_STATE: DaemonState = { lastWarm: {}, firedSlots: [], notified: [] };
+
+/** Enough history to cover a few days of events without growing forever. */
+const NOTIFIED_KEEP = 50;
 
 async function readState(): Promise<DaemonState> {
   try {
@@ -98,7 +110,10 @@ export async function tickCommand(config: Config, options: TickOptions = {}): Pr
     }
   }
 
-  if (!options.dryRun) await writeState(state);
+  if (!options.dryRun) {
+    await announce(config, outcomes, state);
+    await writeState(state);
+  }
 
   if (options.json) {
     process.stdout.write(`${JSON.stringify({ actions, results: outcomes }, null, 2)}\n`);
@@ -373,4 +388,87 @@ function runQuiet(
       child.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
     });
   });
+}
+
+
+/**
+ * Turn this tick's outcomes into desktop notifications.
+ *
+ * Everything announced here is already known from the warm-up: no extra
+ * request is made, and a tick that notices nothing new sends nothing.
+ */
+async function announce(
+  config: Config,
+  outcomes: WarmOutcome[],
+  state: DaemonState,
+): Promise<void> {
+  const settings = config.notifications;
+  if (!settings.enabled || outcomes.length === 0) return;
+
+  const sent = new Set(state.notified ?? []);
+  const queue: { key: string; notification: Notification }[] = [];
+
+  for (const outcome of outcomes) {
+    if (settings.onWarm && outcome.status === "warmed") {
+      queue.push({
+        key: `warm:${outcome.name}:${outcome.resetsAt ?? "?"}`,
+        notification: {
+          title: `${outcome.name}: session window open`,
+          body: outcome.resetsAt
+            ? `Resets ${formatReset(outcome.resetsAt)}.`
+            : "A fresh five-hour window has started.",
+        },
+      });
+    }
+
+    if (settings.onLoginExpiry && outcome.loginExpiresAt !== undefined) {
+      const remaining = outcome.loginExpiresAt - Date.now();
+      if (remaining <= LOGIN_WARN_MS) {
+        queue.push({
+          // Once a day is enough for something a week away.
+          key: `login:${outcome.name}:${new Date().toISOString().slice(0, 10)}`,
+          notification: {
+            title: `${outcome.name}: login expires in ${formatDeadline(remaining)}`,
+            body: `Run \`cca login ${outcome.name}\`. Rotating tokens does not extend it.`,
+          },
+        });
+      }
+    }
+  }
+
+  const relief = settings.onLimit ? reliefFor(outcomes, settings.limitThreshold) : null;
+  if (relief) {
+    queue.push({
+      key: `limit:${relief.spent.name}:${relief.spent.resetsAt ?? "?"}`,
+      notification: {
+        title: `${relief.spent.name} is at ${Math.round(relief.spent.utilization!)}%`,
+        body: `${relief.roomy.name} has ${Math.round(relief.roomy.utilization!)}% used — \`cca use ${relief.roomy.name}\` switches the next launch.`,
+      },
+    });
+  }
+
+  for (const item of queue) {
+    if (sent.has(item.key)) continue;
+    await notify(item.notification);
+    sent.add(item.key);
+  }
+  state.notified = [...sent].slice(-NOTIFIED_KEEP);
+}
+
+/** A spent account paired with one that still has room, or nothing. */
+export function reliefFor(
+  outcomes: WarmOutcome[],
+  threshold: number,
+): { spent: WarmOutcome; roomy: WarmOutcome } | null {
+  const known = outcomes.filter(
+    (outcome) => typeof outcome.utilization === "number",
+  );
+  const spent = known.find((outcome) => outcome.utilization! >= threshold);
+  if (!spent) return null;
+
+  const roomy = known
+    .filter((outcome) => outcome.name !== spent.name)
+    .sort((a, b) => a.utilization! - b.utilization!)[0];
+  // Announcing a switch to an account just as tired is worse than silence.
+  return roomy && roomy.utilization! <= spent.utilization! - 30 ? { spent, roomy } : null;
 }

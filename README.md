@@ -199,6 +199,28 @@ Iterate on a layout without restarting Claude Code:
 cca statusline --preview
 ```
 
+## Notifications
+
+```bash
+cca notify test    # prove they arrive on this machine
+cca notify on
+```
+
+Off by default. Once on, `cca daemon tick` announces three things, using only
+what the warm-up already fetched — no extra requests:
+
+- a session window opened after a warm-up, and when it resets
+- the account in use passed `limitThreshold` (90%) while another has real room,
+  naming the one to switch to
+- a login is inside its final week, and that rotating tokens will not save it
+
+Each event is announced once. The tick runs every few minutes and keeps seeing
+the same state, so a key per event is recorded in `~/.ccacc/state/daemon.json`;
+without it a single warm-up would be announced until the window closed.
+
+macOS uses `osascript`, Linux `notify-send`, Windows PowerShell. Nothing is
+installed; a platform missing its tool simply gets no notification.
+
 ## The `/account` command
 
 Install the plugin to get `/account` inside Claude Code:
@@ -236,6 +258,7 @@ startup, so nothing can move a running session to a different account.
 | `cca refresh [name\|--all]` | rotate OAuth tokens |
 | `cca warmup <on\|off\|smart\|schedule>` | configure warm-up |
 | `cca daemon <install\|uninstall\|status\|tick>` | scheduler |
+| `cca notify <on\|off\|test>` | desktop alerts |
 | `cca shell-init <shell>` | shell snippet for the picker |
 | `cca statusline [--preview]` | status line output; `--preview` redraws the last frame |
 | `cca doctor [--deep]` | verify the setup |
