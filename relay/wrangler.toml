@@ -1,0 +1,16 @@
+name = "cca-remote-relay"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+# One Durable Object per paired Mac. It holds the daemon's socket, fans frames
+# out to every connected phone and back, and stores nothing but token hashes.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[observability]
+enabled = true
