@@ -45,9 +45,14 @@ export function startDirectServer(hub: Hub, options: { port: number; lan: boolea
         hub.attach(ws.data.connection);
       },
       async message(ws: ServerWebSocket<SocketData>, raw) {
+        const text = typeof raw === "string" ? raw : Buffer.from(raw).toString("utf8");
+        if (text === "ping") {
+          ws.send("pong");
+          return;
+        }
         let parsed: unknown;
         try {
-          parsed = JSON.parse(typeof raw === "string" ? raw : Buffer.from(raw).toString("utf8"));
+          parsed = JSON.parse(text);
         } catch {
           return;
         }

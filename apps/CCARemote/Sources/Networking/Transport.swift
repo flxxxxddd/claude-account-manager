@@ -49,12 +49,23 @@ actor WebSocketConnection {
             }
         }
         return AsyncThrowingStream { continuation in
+            // Cellular NATs and the relay's edge drop silent sockets; a ping
+            // every 30s keeps the path open and surfaces a dead one quickly.
+            let keepalive = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    guard !Task.isCancelled else { break }
+                    try? await task.send(.string("ping"))
+                }
+            }
             let receiveLoop = Task {
+                defer { keepalive.cancel() }
                 do {
                     while !Task.isCancelled {
                         let message = try await task.receive()
                         switch message {
                         case .data(let data): continuation.yield(data)
+                        case .string(let text) where text == "pong": continue
                         case .string(let text): continuation.yield(Data(text.utf8))
                         @unknown default: break
                         }

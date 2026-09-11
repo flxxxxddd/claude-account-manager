@@ -63,7 +63,12 @@ export class Room implements DurableObject {
   constructor(
     private readonly state: DurableObjectState,
     _env: Env,
-  ) {}
+  ) {
+    // Idle WebSockets get dropped by intermediaries after a minute or two.
+    // Both sides send a literal "ping" every 30s; the runtime answers "pong"
+    // without waking the object, so keepalive costs nothing.
+    this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);

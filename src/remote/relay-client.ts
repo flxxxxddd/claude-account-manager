@@ -26,6 +26,7 @@ export interface RelayClient {
 }
 
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
+const KEEPALIVE_MS = 30_000;
 
 export function startRelayClient(
   hub: Hub,
@@ -36,6 +37,7 @@ export function startRelayClient(
   let socket: WebSocket | undefined;
   let stopped = false;
   let attempt = 0;
+  let keepalive: ReturnType<typeof setInterval> | undefined;
   const clients = new Map<string, Connection>();
   const keyPromise = importKey(fromBase64Url(identity.e2eKey));
 
@@ -64,15 +66,21 @@ export function startRelayClient(
 
     ws.onopen = () => {
       attempt = 0;
+      // The Worker answers "ping" with "pong" via setWebSocketAutoResponse.
+      keepalive = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send("ping");
+      }, KEEPALIVE_MS);
       hub.relayConnected = true;
       hub.broadcast("daemon.updated", hub.info());
       log("relay: connected");
     };
 
     ws.onmessage = async (event) => {
+      const text = typeof event.data === "string" ? event.data : Buffer.from(event.data as ArrayBuffer).toString("utf8");
+      if (text === "pong") return;
       let frame: RelayFrame;
       try {
-        frame = JSON.parse(typeof event.data === "string" ? event.data : Buffer.from(event.data as ArrayBuffer).toString("utf8")) as RelayFrame;
+        frame = JSON.parse(text) as RelayFrame;
       } catch {
         return;
       }
@@ -112,6 +120,8 @@ export function startRelayClient(
     };
 
     ws.onclose = (event) => {
+      if (keepalive) clearInterval(keepalive);
+      keepalive = undefined;
       if (socket === ws) socket = undefined;
       hub.relayConnected = false;
       for (const id of [...clients.keys()]) dropClient(id);
