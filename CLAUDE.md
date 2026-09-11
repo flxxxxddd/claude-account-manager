@@ -29,6 +29,9 @@ src/config.ts        ~/.ccacc/config.json
 src/commands/        one file per command group
 src/statusline/      the HUD: stdin payload, segments, burn rate, git state
 src/tui/picker.ts    dependency-free arrow-key picker
+src/remote/          `cca remote` daemon: Agent SDK sessions over WebSocket (docs/remote-protocol.md)
+relay/               Cloudflare Worker relay; forwards E2E-sealed frames, stores token hashes only
+apps/CCARemote/      SwiftUI iOS+macOS client (XcodeGen; `xcodegen generate` after touching project.yml)
 plugin/              the Claude Code plugin (/account, switching-accounts skill)
 ```
 
@@ -70,6 +73,16 @@ child that finishes second silently reverts the other's profile.
 codebase is milliseconds. Reading it raw puts the reset in 1970 and the window renders
 as permanently expired; `windowsFromPayload` converts, and a test pins it.
 
+**The remote daemon uses the user's `claude`, not the SDK's bundled one.** The Agent
+SDK ships its own Claude Code binary; `pathToClaudeCodeExecutable` points it at
+`command -v claude` so plugins, settings and the credential slot match `cca`, and so a
+CC update does not leave two versions disagreeing. Pin `@anthropic-ai/claude-agent-sdk`
+to the installed CC version when bumping.
+
+**Protocol changes are two-sided.** `src/remote/protocol.ts` and
+`apps/CCARemote/Sources/Protocol/Models.swift` describe the same frames; change both and
+bump `PROTOCOL_VERSION` when a field's meaning changes. `hello` rejects a mismatch.
+
 **Warm-up shifts a window, it does not enlarge a quota.** Say so in any user-facing text.
 It is an ordinary billed request.
 
@@ -80,6 +93,7 @@ bun test                  # pure logic: addressing, schedule slots, window state
 bunx tsc --noEmit
 bun run build             # → dist/cca
 bun run src/cli.ts <cmd>  # run without building
+bun run src/cli.ts remote serve --port 48799 --relay ws://127.0.0.1:8787   # daemon against `bunx wrangler dev` in relay/
 ```
 
 `CCA_HOME=/tmp/cca-test` isolates a scratch profile set so experiments never touch a

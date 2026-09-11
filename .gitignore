@@ -5,3 +5,10 @@ dist/
 
 # oh-my-claudecode runtime state
 .omc/
+
+# Xcode
+apps/**/xcuserdata/
+apps/**/*.xcworkspace/xcuserdata/
+apps/**/DerivedData/
+relay/node_modules/
+relay/.wrangler/

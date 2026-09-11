@@ -1,0 +1,71 @@
+# XcodeGen spec. Regenerate the project with `xcodegen generate` (brew install xcodegen).
+name: CCARemote
+options:
+  bundleIdPrefix: app.cca
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  xcodeVersion: "27.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: YES
+    CODE_SIGN_STYLE: Automatic
+    # Free Apple ID: personal team, no push, no iCloud. Set your team in Xcode once.
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  CCARemote:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - path: Sources
+      - path: Resources
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleDisplayName: CCA Remote
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSCameraUsageDescription: Scans the pairing QR code that `cca remote pair` shows on your Mac.
+        NSLocalNetworkUsageDescription: Connects to the cca daemon on your Mac over the local network.
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UIUserInterfaceStyle: Dark
+        CFBundleURLTypes:
+          - CFBundleURLName: app.cca.remote.pair
+            CFBundleURLSchemes: [ccaremote]
+        NSAppTransportSecurity:
+          # ws:// to 127.0.0.1 and LAN addresses; the relay is wss://.
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: Resources/CCARemote.entitlements
+      properties:
+        # No App Sandbox on macOS: the Mac app reads ~/.ccacc/remote/identity.json
+        # to pair with the local daemon without a QR code, and can launch `cca`.
+        com.apple.security.app-sandbox: false
+        com.apple.security.network.client: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.cca.remote
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ENABLE_PREVIEWS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+        SUPPORTS_MACCATALYST: NO
+schemes:
+  CCARemote:
+    build:
+      targets:
+        CCARemote: all
+    run:
+      config: Debug
