@@ -18,6 +18,7 @@ import {
   useCommand,
 } from "./commands/profiles.ts";
 import { runCommand, statusCommand } from "./commands/run.ts";
+import { remoteCommand } from "./commands/remote.ts";
 import { statsCommand } from "./commands/stats.ts";
 import { shellInitCommand } from "./commands/shell.ts";
 import { notifyCommand } from "./commands/notify.ts";
@@ -63,7 +64,7 @@ function parseArgs(argv: string[]): Args {
   return { command: positional[0] ?? "", positional: positional.slice(1), flags, passthrough };
 }
 
-const VALUE_FLAGS = new Set(["model", "at", "profiles", "poll", "interval", "mode", "name", "days"]);
+const VALUE_FLAGS = new Set(["model", "at", "profiles", "poll", "interval", "mode", "name", "days", "port", "relay", "idle"]);
 
 function splitFlag(token: string): [string, string | undefined] {
   const eq = token.indexOf("=");
@@ -179,6 +180,22 @@ async function main(argv: string[]): Promise<number> {
 
     case "daemon":
       return daemonCommand(config, args);
+
+    case "remote":
+      return remoteCommand({
+        sub: args.positional[0],
+        version: VERSION,
+        flags: {
+          rotate: flagBool(args, "rotate"),
+          json: flagBool(args, "json"),
+          port: flagString(args, "port"),
+          lan: flagBool(args, "lan"),
+          noLan: flagBool(args, "no-lan"),
+          relay: flagString(args, "relay"),
+          noRelay: flagBool(args, "no-relay"),
+          idle: flagString(args, "idle"),
+        },
+      });
 
     case "stats":
       return statsCommand(config, {
@@ -332,6 +349,13 @@ ${c.bold("Session warm-up")}
   cca daemon install        register the OS scheduler   ${c.gray("--interval <minutes>")}
   cca daemon uninstall | status | tick
   cca notify on|off|test    desktop alerts for warm-ups, limits and expiring logins
+
+${c.bold("Remote (CCA Remote app)")}
+  cca remote pair           QR code the iOS/macOS app scans   ${c.gray("--rotate re-keys")}
+  cca remote install        run the daemon at login (launchd)
+  cca remote serve          run it in the foreground
+  cca remote config         --relay wss://… --lan --port <n> --idle <minutes>
+  cca remote status | uninstall
 
 ${c.bold("Integration")}
   cca shell-init fish       shell snippet so plain \`claude\` shows the picker
