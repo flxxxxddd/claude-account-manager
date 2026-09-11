@@ -58,6 +58,16 @@ secret at 128 bytes and otherwise needs the secret in `argv`, and a credential b
 ~11 KB. So `darwinStore` writes the file and clears the profile's Keychain entry, and
 reads Keychain-first so it still sees credentials CC has since migrated.
 
+**`claude auth status` cannot tell you *whose* account a profile holds.** Its
+`email`, `orgId` and `orgName` come from `<config dir>/.claude.json`'s cached
+`oauthAccount`, not from the credential slot it just resolved — so in `shared` mode,
+where every profile shares `~/.claude.json`, they name whichever account last ran a
+session. Observed on 2.1.252 and 2.1.258: point `CLAUDE_CONFIG_DIR` at an empty scratch
+directory and all three come back null while `loggedIn` stays true. Read `loggedIn` —
+that is genuinely derived from the slot, and it is what proves the addressing — and get
+identity from `/api/oauth/profile` instead. `doctor --deep` splits the two checks for
+exactly this reason.
+
 **The status line must not block.** `cca statusline` runs on every Claude Code turn.
 The active account's limits, context window and cost arrive on stdin, so that account
 needs no network at all; other accounts print from `~/.ccacc/cache/usage/<name>.json`

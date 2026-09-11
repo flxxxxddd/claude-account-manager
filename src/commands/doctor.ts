@@ -1,16 +1,20 @@
 /**
  * `cca doctor` — prove the whole chain works rather than assume it.
  *
- * The important check is the last one: it asks Claude Code itself, running
- * under a profile's environment, which account it sees. If that matches the
- * profile's recorded email, the credential addressing is correct on this
- * machine and this CC version.
+ * The important checks are the last two, and they answer different questions.
+ * One asks Claude Code itself, running under a profile's environment, whether
+ * it resolves a login at all: that is what proves the addressing in
+ * `cc-paths.ts` still matches this CC version. The other asks the API who the
+ * stored credentials belong to, because Claude Code cannot answer that — see
+ * `claudeResolvesLogin` below.
  */
 import { spawn } from "node:child_process";
+import { fetchProfile } from "../api.ts";
 import { credentialServiceName, DEFAULT_CC_CONFIG_DIR } from "../cc-paths.ts";
 import { profileEnv } from "../cc-paths.ts";
-import type { Config } from "../config.ts";
+import type { Config, Profile } from "../config.ts";
 import { CONFIG_PATH } from "../config.ts";
+import { accessTokenFor } from "../session.ts";
 import { getStore, readSlot } from "../store/index.ts";
 import { c, formatDeadline, LOGIN_WARN_MS, symbols } from "../ui.ts";
 import { claudeBin } from "./profiles.ts";
@@ -85,17 +89,29 @@ export async function doctorCommand(config: Config, options: { deep?: boolean } 
     }
 
     if (options.deep && version !== null) {
-      const seen = await claudeSeesAccount(profile.dir, profile.mode);
+      const slot = credentialServiceName(profile.dir);
+      const resolution = await claudeResolvesLogin(profile.dir, profile.mode);
+      checks.push({
+        label: `profile ${name}: Claude Code resolves it`,
+        ok: resolution.kind === "logged-in",
+        detail:
+          resolution.kind === "logged-in"
+            ? `claude finds a login at ${slot}`
+            : resolution.kind === "logged-out"
+              ? `claude finds nothing at ${slot} — run \`cca login ${name}\``
+              : resolution.detail,
+      });
+
+      const identity = await profileIdentity(name, profile);
       const expected = profile.email;
       checks.push({
-        label: `profile ${name}: Claude Code agrees`,
-        ok: seen !== null && (expected === undefined || seen === expected),
+        label: `profile ${name}: account identity`,
+        ok: identity.email !== undefined && (expected === undefined || identity.email === expected),
         detail:
-          seen === null
-            ? "claude auth status reported no login under this profile"
-            : expected && seen !== expected
-              ? `claude sees ${seen}, profile records ${expected}`
-              : `claude sees ${seen}`,
+          identity.error ??
+          (expected && identity.email !== expected
+            ? `credentials belong to ${identity.email}, profile records ${expected} — run \`cca login ${name}\``
+            : `credentials belong to ${identity.email}`),
       });
     }
   }
@@ -117,16 +133,76 @@ async function claudeVersion(): Promise<string | null> {
   return result.code === 0 ? result.stdout.trim() : null;
 }
 
-/** Ask Claude Code which account it resolves under a profile's environment. */
-async function claudeSeesAccount(dir: string, mode: Config["profiles"][string]["mode"]): Promise<string | null> {
+type Resolution =
+  | { kind: "logged-in" }
+  | { kind: "logged-out" }
+  | { kind: "unreadable"; detail: string };
+
+/**
+ * Ask Claude Code whether it resolves a login under a profile's environment.
+ *
+ * `loggedIn` is the only field here worth reading. `email`, `orgId` and
+ * `orgName` are served from `<config dir>/.claude.json`'s cached `oauthAccount`
+ * rather than from the credential slot CC just resolved — so in `shared` mode,
+ * where every profile shares ~/.claude.json, they name whichever account last
+ * ran a session, and comparing them against a profile is meaningless.
+ *
+ * Observed on 2.1.252 and 2.1.258: running `auth status --json` with
+ * CLAUDE_SECURESTORAGE_CONFIG_DIR pointed at a profile and CLAUDE_CONFIG_DIR
+ * pointed at an empty scratch directory returns all three as null while
+ * `loggedIn` stays true and `subscriptionType` still comes from the blob.
+ */
+async function claudeResolvesLogin(
+  dir: string,
+  mode: Config["profiles"][string]["mode"],
+): Promise<Resolution> {
   const result = await capture(claudeBin(), ["auth", "status", "--json"], profileEnv(dir, mode));
-  if (result.code !== 0) return null;
+  if (result.code !== 0) {
+    const reason = firstLine(result.stderr) ?? firstLine(result.stdout);
+    return {
+      kind: "unreadable",
+      detail: `\`claude auth status\` exited ${result.code}${reason ? `: ${reason}` : ""}`,
+    };
+  }
+  // CC may print a banner ahead of the JSON, so read the object, not the stream.
+  const parsed = parseJsonObject(result.stdout);
+  if (parsed === null) {
+    return { kind: "unreadable", detail: "could not parse `claude auth status --json` output" };
+  }
+  return parsed.loggedIn === true ? { kind: "logged-in" } : { kind: "logged-out" };
+}
+
+/**
+ * Who the stored credentials actually belong to.
+ *
+ * This has to come from the API: Claude Code will confirm that a credential
+ * exists in the slot, but never says whose it is.
+ */
+async function profileIdentity(name: string, profile: Profile): Promise<{ email?: string; error?: string }> {
   try {
-    const parsed = JSON.parse(result.stdout) as { loggedIn?: boolean; email?: string };
-    return parsed.loggedIn ? (parsed.email ?? null) : null;
+    const oauth = await accessTokenFor(name, profile);
+    const info = await fetchProfile(oauth.accessToken);
+    if (!info.email) return { error: "the profile endpoint returned no email" };
+    return { email: info.email };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function parseJsonObject(text: string): { loggedIn?: boolean } | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end < start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1)) as { loggedIn?: boolean };
   } catch {
     return null;
   }
+}
+
+function firstLine(text: string): string | undefined {
+  const line = text.trim().split("\n")[0]?.trim();
+  return line ? line : undefined;
 }
 
 function capture(
