@@ -14,8 +14,8 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: YES
     CODE_SIGN_STYLE: Automatic
-    # Free Apple ID: personal team, no push, no iCloud. Set your team in Xcode once.
-    DEVELOPMENT_TEAM: ""
+    # Free Apple ID: personal team, no push, no iCloud.
+    DEVELOPMENT_TEAM: F2KV8CWW2D
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 targets:
   CCARemote:
