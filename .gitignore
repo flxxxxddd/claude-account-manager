@@ -13,3 +13,4 @@ apps/**/DerivedData/
 relay/node_modules/
 relay/.wrangler/
 apps/**/.build/
+.serena/

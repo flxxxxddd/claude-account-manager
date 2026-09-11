@@ -251,6 +251,28 @@ counting that would cancel out real usage elsewhere in the day.
 
 History lives in `~/.ccacc/history/<name>.jsonl` and is kept for 60 days.
 
+## Remote: the iPhone and Mac app
+
+`apps/CCARemote` is a native SwiftUI client for iOS and macOS. It shows every
+Claude Code session on your Mac, starts new ones under any profile with a
+model, effort and permission mode, streams replies, lets you answer permission
+prompts and questions from the phone, and switches the active account.
+
+```bash
+cca remote install                                  # daemon at login, restarted if it dies
+cca remote config --relay wss://<worker>.workers.dev  # optional: reach it away from home
+cca remote pair                                     # scan this in the app
+```
+
+The daemon drives sessions through the Agent SDK, one Claude Code process per
+session pinned to a profile exactly like `cca <name>` is. Away from your network
+the traffic crosses a relay you deploy yourself (`relay/`, a Cloudflare Worker);
+every frame is sealed with AES-256-GCM under the key in the QR, so the relay
+forwards ciphertext only. On the same Mac or LAN the app connects directly.
+
+Details: [`docs/remote-protocol.md`](docs/remote-protocol.md),
+[`apps/CCARemote/README.md`](apps/CCARemote/README.md), [`relay/README.md`](relay/README.md).
+
 ## The `/account` command
 
 Install the plugin to get `/account` inside Claude Code:
@@ -293,6 +315,10 @@ startup, so nothing can move a running session to a different account.
 | `cca shell-init <shell>` | shell snippet for the picker |
 | `cca statusline [--preview]` | status line output; `--preview` redraws the last frame |
 | `cca doctor [--deep]` | verify the setup |
+| `cca remote pair [--rotate]` | QR code for the CCA Remote app |
+| `cca remote install` / `serve` | run the remote daemon under launchd, or in the foreground |
+| `cca remote config --relay <wss://…> [--lan] [--port N] [--idle M]` | where phones reach the daemon |
+| `cca remote status` / `uninstall` | daemon state; remove the launch agent |
 
 ## Where things live
 
