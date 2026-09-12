@@ -28,12 +28,23 @@ export interface RelayClient {
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 const KEEPALIVE_MS = 30_000;
 
-export function startRelayClient(
+/**
+ * Bun and Node ≥ 22 ship a WHATWG WebSocket; older Node gets `ws`, whose
+ * client exposes the same onopen/onmessage/onclose surface this code uses.
+ */
+async function webSocketClass(): Promise<typeof WebSocket> {
+  if (typeof globalThis.WebSocket !== "undefined") return globalThis.WebSocket;
+  const mod = await import("ws");
+  return mod.default as unknown as typeof WebSocket;
+}
+
+export async function startRelayClient(
   hub: Hub,
   identity: Identity,
   relayUrl: string,
   log: (line: string) => void,
-): RelayClient {
+): Promise<RelayClient> {
+  const WS = await webSocketClass();
   let socket: WebSocket | undefined;
   let stopped = false;
   let attempt = 0;
@@ -49,7 +60,7 @@ export function startRelayClient(
   url.searchParams.set("clientToken", identity.clientToken);
 
   const sendRelay = (frame: RelayFrame): void => {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(frame));
+    if (socket?.readyState === 1) socket.send(JSON.stringify(frame));
   };
 
   const sealed = async (frame: Frame): Promise<Envelope> => seal(await keyPromise, JSON.stringify(frame), identity.deviceId);
@@ -61,14 +72,14 @@ export function startRelayClient(
   const connect = (): void => {
     if (stopped) return;
     log(`relay: connecting to ${url.host}`);
-    const ws = new WebSocket(url.toString());
+    const ws = new WS(url.toString());
     socket = ws;
 
     ws.onopen = () => {
       attempt = 0;
       // The Worker answers "ping" with "pong" via setWebSocketAutoResponse.
       keepalive = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send("ping");
+        if (ws.readyState === 1) ws.send("ping");
       }, KEEPALIVE_MS);
       hub.relayConnected = true;
       hub.broadcast("daemon.updated", hub.info());

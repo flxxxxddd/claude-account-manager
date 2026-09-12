@@ -98,9 +98,9 @@ async function serve(args: RemoteArgs): Promise<number> {
     log,
   });
 
-  let direct: ReturnType<typeof startDirectServer> | undefined;
+  let direct: Awaited<ReturnType<typeof startDirectServer>> | undefined;
   try {
-    direct = startDirectServer(hub, { port: settings.port, lan: settings.lan, log });
+    direct = await startDirectServer(hub, { port: settings.port, lan: settings.lan, log });
   } catch (err) {
     process.stderr.write(
       `${c.red(symbols.fail)} Could not listen on port ${settings.port}: ${(err as Error).message}\n` +
@@ -108,7 +108,7 @@ async function serve(args: RemoteArgs): Promise<number> {
     );
     return 1;
   }
-  const relay = settings.relayUrl ? startRelayClient(hub, identity, settings.relayUrl, log) : undefined;
+  const relay = settings.relayUrl ? await startRelayClient(hub, identity, settings.relayUrl, log) : undefined;
   if (!relay) log("relay: off (set one with `cca remote config --relay wss://…`)");
 
   log(`device ${identity.deviceId} · pair with \`cca remote pair\``);
