@@ -238,9 +238,16 @@ ${program.map((p) => `    <string>${escapeXml(p)}</string>`).join("\n")}
   await writeFile(path, plist);
   const uid = process.getuid?.() ?? 501;
   await runQuiet("launchctl", ["bootout", `gui/${uid}/${LAUNCHD_LABEL}`]);
-  const { code, stderr } = await runQuiet("launchctl", ["bootstrap", `gui/${uid}`, path]);
-  if (code !== 0) {
-    process.stderr.write(`${c.yellow(symbols.warn)} Wrote ${path} but launchctl bootstrap failed: ${stderr.trim()}\n`);
+  // bootout returns before the old job is gone; a bootstrap that lands in
+  // that window fails with "5: Input/output error". Retry briefly.
+  let result = { code: 1, stdout: "", stderr: "" };
+  for (let attempt = 0; attempt < 20; attempt++) {
+    result = await runQuiet("launchctl", ["bootstrap", `gui/${uid}`, path]);
+    if (result.code === 0 || !/Input\/output error|already/.test(result.stderr)) break;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  if (result.code !== 0) {
+    process.stderr.write(`${c.yellow(symbols.warn)} Wrote ${path} but launchctl bootstrap failed: ${result.stderr.trim()}\n`);
     return 1;
   }
   process.stdout.write(
