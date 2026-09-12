@@ -4,7 +4,7 @@
   "description": "Switch between multiple Claude.ai accounts in Claude Code without re-logging in, with live rate-limit visibility and session warm-up.",
   "type": "module",
   "bin": {
-    "cca": "./dist/cli.js"
+    "cca": "dist/cli.js"
   },
   "files": [
     "dist/cli.js",
