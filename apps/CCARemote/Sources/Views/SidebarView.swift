@@ -31,8 +31,14 @@ struct SidebarView: View {
                             }
                             Text(session.name).lineLimit(1)
                             Spacer()
-                            if session.state == .running { StatusDot(state: .running) }
+                            if session.state == .running || session.state == .starting {
+                                if let p = store.progress[session.id], p.activity == .tool, let tool = p.detail {
+                                    Text(tool).font(.caption2).foregroundStyle(Theme.coral)
+                                }
+                                StatusDot(state: .running)
+                            }
                         }
+                        .padding(.vertical, 2)
                         .tag(session.id)
                         .contextMenu {
                             if session.isManaged {
@@ -51,6 +57,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .tint(Color.white.opacity(0.7))
         .safeAreaInset(edge: .bottom) {
             if let device = store.devices.first, let active = (store.accounts[device.id] ?? []).first(where: \.active) {
                 Button { showAccounts = true } label: {

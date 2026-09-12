@@ -20,6 +20,7 @@ enum DaemonEvent: Sendable {
     case item(ChatItem)
     case delta(sessionId: String, itemId: String, text: String)
     case accounts([Account])
+    case progress(SessionProgress)
     case daemonInfo(DaemonInfo)
     case relayStatus(String)
 }
@@ -142,6 +143,7 @@ actor DaemonClient {
                 let d = try decoder.decode(Payload<SessionDeltaEvent>.self, from: raw).value
                 outbound?.yield(.delta(sessionId: d.sessionId, itemId: d.itemId, text: d.text))
             case "accounts.updated": outbound?.yield(.accounts(try decoder.decode(Payload<AccountsUpdatedEvent>.self, from: raw).value.accounts))
+            case "session.progress": outbound?.yield(.progress(try decoder.decode(Payload<SessionProgress>.self, from: raw).value))
             case "daemon.updated": outbound?.yield(.daemonInfo(try decoder.decode(Payload<DaemonInfo>.self, from: raw).value))
             case "relay.status":
                 struct Msg: Decodable { var message: String }

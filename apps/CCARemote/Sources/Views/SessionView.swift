@@ -17,6 +17,9 @@ struct SessionView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let session, session.isManaged {
+                SessionHUD(session: session, accounts: store.accounts[deviceId] ?? [], toolCalls: items.filter { $0.kind == .toolUse }.count)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -50,9 +53,17 @@ struct SessionView: View {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
+            if let progress = store.progress[sessionId], session?.isManaged == true {
+                ActivityBar(progress: progress).transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if session?.isManaged == true { composer } else { externalFooter }
         }
         .background(Theme.background)
+        .animation(.snappy, value: store.progress[sessionId] != nil)
+        #if os(iOS)
+        .sensoryFeedback(.warning, trigger: session?.pending?.requestId) { _, new in new != nil }
+        .sensoryFeedback(.success, trigger: session?.state) { old, new in old == .running && new == .idle }
+        #endif
         .navigationTitle(session?.name ?? "Session")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -94,7 +105,6 @@ struct SessionView: View {
             if item.kind == .thinking { return showThinking && !(item.text ?? "").isEmpty }
             if item.kind == .toolResult { return false } // rendered inside the ToolCard
             if item.kind == .text, item.done, (item.text ?? "").isEmpty { return false }
-            if item.kind == .result { return false }
             return true
         }
     }
@@ -113,6 +123,7 @@ struct SessionView: View {
                 Text(item.text ?? "").textSelection(.enabled)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(Theme.cardRaised, in: .rect(cornerRadius: 18))
+                    .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(item.text ?? "") } }
             }
         case .text:
             HStack(alignment: .top, spacing: 0) {
@@ -121,6 +132,7 @@ struct SessionView: View {
                 if !item.done { Text("▍").foregroundStyle(Theme.coral).opacity(0.8) }
             }
             .padding(.leading, item.parentToolUseId == nil ? 0 : 16)
+            .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(item.text ?? "") } }
         case .thinking:
             Text(item.text ?? "").font(.footnote).italic().foregroundStyle(Theme.tertiary).lineLimit(8)
         case .toolUse:
@@ -130,9 +142,26 @@ struct SessionView: View {
             Label(item.text ?? "", systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(Theme.tertiary)
         case .error:
             Label(item.text ?? "", systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Theme.red)
-        case .result, .toolResult:
+        case .result:
+            HStack(spacing: 8) {
+                if let cost = item.costUsd { Text(cost, format: .currency(code: "USD").precision(.fractionLength(3))) }
+                if let ms = item.durationMs { Text("· \(Int(ms / 1000))s") }
+                if let turns = item.numTurns, turns > 1 { Text("· \(turns) turns") }
+            }
+            .font(.caption2.monospacedDigit()).foregroundStyle(Theme.tertiary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        case .toolResult:
             EmptyView()
         }
+    }
+
+    private func copy(_ text: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = text
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
     }
 
     private var cleanSlate: some View {
@@ -165,7 +194,7 @@ struct SessionView: View {
                     Button { showModelSheet = true } label: {
                         Chip(text: [session?.model?.modelDisplayName ?? "Default", session?.effort?.title].compactMap { $0 }.joined(separator: " · "), tint: .primary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Pressable(scale: 0.94))
                     Menu {
                         ForEach(PermissionMode.allCases) { mode in
                             Button(mode.title) { Task { _ = await store.perform { try await client?.setPermissionMode(sessionId: sessionId, mode: mode) } } }
@@ -187,7 +216,7 @@ struct SessionView: View {
                             .frame(width: 34, height: 34)
                             .background(draft.trimmingCharacters(in: .whitespaces).isEmpty ? Theme.tertiary : Theme.coral, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Pressable(scale: 0.9))
                     .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
                 }

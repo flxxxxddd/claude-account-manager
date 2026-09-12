@@ -56,3 +56,12 @@ struct SessionRemovedEvent: Decodable { var sessionId: String }
 struct SessionItemEvent: Decodable { var item: ChatItem }
 struct SessionDeltaEvent: Decodable { var sessionId: String; var itemId: String; var text: String }
 struct AccountsUpdatedEvent: Decodable { var accounts: [Account] }
+
+struct SessionProgress: Decodable, Hashable, Sendable {
+    enum Activity: String, Decodable, Sendable { case thinking, writing, tool, reading, waiting }
+    var sessionId: String
+    var activity: Activity?
+    var detail: String?
+    var startedAt: Date
+    var outputTokens: Int
+}

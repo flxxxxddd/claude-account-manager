@@ -164,13 +164,24 @@ struct Session: Codable, Identifiable, Hashable, Sendable {
     var external: ExternalInfo?
     var gitBranch: String?
     var contextPercent: Double?
+    var contextTokens: Int?
+    var contextMaxTokens: Int?
     var totalCostUsd: Double?
+    var totalDurationMs: Double?
+    var numTurns: Int?
+    var limits: SessionLimits?
     var claudeSessionId: String?
     var error: String?
 
     var projectName: String { URL(fileURLWithPath: cwd).lastPathComponent }
     var isManaged: Bool { kind == .managed }
     var needsInput: Bool { state == .requiresAction }
+}
+
+struct SessionLimits: Codable, Hashable, Sendable {
+    var fiveHour: LimitWindow?
+    var sevenDay: LimitWindow?
+    var sevenDayOpus: LimitWindow?
 }
 
 struct HistoryEntry: Codable, Identifiable, Hashable, Sendable {

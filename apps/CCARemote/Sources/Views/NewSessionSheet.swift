@@ -106,7 +106,9 @@ struct NewSessionSheet: View {
             .onChange(of: cwd) { _, _ in Task { await loadHistory() } }
         }
         .presentationBackground(Theme.background)
+        #if os(macOS)
         .frame(minWidth: 460, minHeight: 560)
+        #endif
     }
 
     private func bootstrap() async {
@@ -186,7 +188,9 @@ struct FolderBrowser: View {
             .task { load(start ?? "~") }
         }
         .presentationBackground(Theme.background)
+        #if os(macOS)
         .frame(minWidth: 420, minHeight: 480)
+        #endif
     }
 
     private func load(_ path: String) {

@@ -57,7 +57,9 @@ struct ModelSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationBackground(Theme.background)
+        #if os(macOS)
         .frame(minWidth: 380, minHeight: 420)
+        #endif
     }
 
     private func isSelected(_ choice: ModelChoice) -> Bool {

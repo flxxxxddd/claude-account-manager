@@ -7,6 +7,7 @@ struct PendingCard: View {
     var onAnswers: ([String: String]) -> Void
 
     @State private var selections: [String: Set<String>] = [:]
+    @State private var custom: [String: String] = [:]
     @State private var showInput = false
 
     var body: some View {
@@ -65,6 +66,7 @@ struct PendingCard: View {
                         var set = selections[question.question] ?? []
                         if question.multiSelect { if picked { set.remove(option.label) } else { set.insert(option.label) } } else { set = [option.label] }
                         selections[question.question] = set
+                        custom[question.question] = nil
                     } label: {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: picked ? "checkmark.circle.fill" : "circle").foregroundStyle(picked ? Theme.coral : Theme.tertiary)
@@ -79,6 +81,18 @@ struct PendingCard: View {
                     }
                     .buttonStyle(.plain)
                 }
+                // Claude's own app always offers a free-text answer too.
+                HStack(spacing: 10) {
+                    Image(systemName: (custom[question.question]?.isEmpty == false) ? "checkmark.circle.fill" : "pencil.circle")
+                        .foregroundStyle((custom[question.question]?.isEmpty == false) ? Theme.coral : Theme.tertiary)
+                    TextField("Other…", text: Binding(get: { custom[question.question] ?? "" }, set: { value in
+                        custom[question.question] = value
+                        if !value.isEmpty { selections[question.question] = [] }
+                    }), axis: .vertical)
+                    .textFieldStyle(.plain).lineLimit(1...4)
+                }
+                .padding(10)
+                .background(Theme.card, in: .rect(cornerRadius: 12))
             }
         }
         HStack {
@@ -86,12 +100,13 @@ struct PendingCard: View {
             Button("Answer") {
                 var answers: [String: String] = [:]
                 for question in q.questions {
-                    answers[question.question] = (selections[question.question] ?? []).sorted().joined(separator: ", ")
+                    let typed = custom[question.question]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    answers[question.question] = typed.isEmpty ? (selections[question.question] ?? []).sorted().joined(separator: ", ") : typed
                 }
                 onAnswers(answers)
             }
             .buttonStyle(.borderedProminent).tint(Theme.coral)
-            .disabled(q.questions.contains { (selections[$0.question] ?? []).isEmpty })
+            .disabled(q.questions.contains { (selections[$0.question] ?? []).isEmpty && (custom[$0.question]?.trimmingCharacters(in: .whitespaces).isEmpty ?? true) })
         }
     }
 }

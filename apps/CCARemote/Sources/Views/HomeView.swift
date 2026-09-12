@@ -66,6 +66,7 @@ struct HomeView: View {
                 }
                 .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black).controlSize(.large)
                 .clipShape(Capsule())
+                .sensoryFeedback(.impact(weight: .light), trigger: showNewSession)
                 .padding(.bottom, 18)
                 .shadow(radius: 12, y: 6)
             }
@@ -98,7 +99,7 @@ struct HomeView: View {
                         .background(Theme.card, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.stroke))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(Pressable(scale: 0.95))
                 }
                 Button { showPairing = true } label: {
                     Label("Add device", systemImage: "plus").font(.subheadline.weight(.medium))
@@ -106,7 +107,7 @@ struct HomeView: View {
                         .background(Theme.card, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.stroke))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Pressable(scale: 0.95))
             }
         }
     }
@@ -130,13 +131,24 @@ struct HomeView: View {
                 NavigationLink(value: pair.session.id) {
                     SessionRow(session: pair.session, deviceName: store.devices.count > 1 ? pair.device.name : nil)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(Pressable())
+                .contextMenu {
+                    if pair.session.isManaged {
+                        Button("Stop process", systemImage: "stop.circle") { Task { _ = try? await store.client(for: pair.device.id)?.stop(sessionId: pair.session.id) } }
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            Task { try? await store.client(for: pair.device.id)?.delete(sessionId: pair.session.id) }
+                        }
+                    } else {
+                        Text("Terminal session · read-only")
+                    }
+                }
             }
         }
     }
 }
 
 struct SessionRow: View {
+    @Environment(AppStore.self) private var store
     var session: Session
     var deviceName: String?
 
@@ -153,7 +165,10 @@ struct SessionRow: View {
                 if session.needsInput {
                     Text("Waiting for you · \(session.updatedAt.shortRelative)").font(.caption).foregroundStyle(Theme.amber).lineLimit(1)
                 } else if session.state == .running || session.state == .starting {
-                    HStack(spacing: 5) { StatusDot(state: session.state); Text("Working").font(.caption).foregroundStyle(Theme.coral) }
+                    HStack(spacing: 5) {
+                        StatusDot(state: session.state)
+                        Text(runningLabel).font(.caption).foregroundStyle(Theme.coral)
+                    }
                 } else {
                     Text(session.updatedAt.shortRelative).font(.caption).foregroundStyle(Theme.tertiary)
                 }
@@ -174,6 +189,16 @@ struct SessionRow: View {
             }
         }
         .card()
+    }
+
+    private var runningLabel: String {
+        guard let p = store.progress[session.id] else { return "Working" }
+        switch p.activity {
+        case .tool: return "Running \(p.detail ?? "tool")"
+        case .writing: return "Writing"
+        case .reading: return "Reading"
+        default: return "Thinking · \(max(0, Int(Date.now.timeIntervalSince(p.startedAt))))s"
+        }
     }
 
     private func pendingPreview(_ pending: PendingRequest) -> String {

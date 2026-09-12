@@ -20,6 +20,7 @@ final class AppStore {
 
     // Per session id
     private(set) var items: [String: [ChatItem]] = [:]
+    private(set) var progress: [String: SessionProgress] = [:]
     private(set) var loadedItems: Set<String> = []
 
     var lastError: String?
@@ -164,6 +165,7 @@ final class AppStore {
         case .sessionRemoved(let sessionId):
             sessions[id]?.removeAll { $0.id == sessionId }
             items[sessionId] = nil
+            progress[sessionId] = nil
         case .item(let item):
             var list = items[item.sessionId] ?? []
             if let index = list.firstIndex(where: { $0.id == item.id }) { list[index] = item } else { list.append(item) }
@@ -174,6 +176,8 @@ final class AppStore {
             items[sessionId] = list
         case .accounts(let list):
             accounts[id] = list
+        case .progress(let p):
+            if p.activity == nil { progress[p.sessionId] = nil } else { progress[p.sessionId] = p }
         case .daemonInfo(let info):
             if case .connected = connections[id] { connections[id] = .connected(info) }
         case .relayStatus(let message):

@@ -62,7 +62,9 @@ struct PairingView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
         .presentationBackground(Theme.background)
+        #if os(macOS)
         .frame(minWidth: 440, minHeight: 420)
+        #endif
     }
 
     private func pair(_ text: String) {

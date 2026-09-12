@@ -50,7 +50,9 @@ struct AccountsView: View {
             }
         }
         .presentationBackground(Theme.background)
+        #if os(macOS)
         .frame(minWidth: 420, minHeight: 480)
+        #endif
     }
 }
 
