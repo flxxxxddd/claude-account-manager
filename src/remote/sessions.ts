@@ -97,11 +97,20 @@ class TurnQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
+interface Progress {
+  startedAt: number;
+  outputTokens: number;
+  activity?: Events["session.progress"]["activity"];
+  detail?: string;
+  lastSentAt: number;
+}
+
 interface Runtime {
   query: Query;
   turns: TurnQueue;
   normalizer: Normalizer;
   pending: Map<string, Pending>;
+  progress?: Progress;
   idleTimer?: ReturnType<typeof setTimeout>;
   /** Resolves when the SDK stream ends, so stop() can await teardown. */
   finished: Promise<void>;
@@ -238,33 +247,9 @@ export class SessionManager {
 
   private async importTranscript(session: Session): Promise<void> {
     try {
-      const { getSessionMessages } = await import("@anthropic-ai/claude-agent-sdk");
-      const messages = await getSessionMessages(session.id, { dir: session.cwd, limit: 400 });
-      const normalizer = new Normalizer(session.id);
-      let count = 0;
-      for (const msg of messages) {
-        const m = msg.message as { role?: string; content?: unknown };
-        if (msg.type === "user" && m && typeof m.content === "string") {
-          await appendItem({
-            id: `hist-${msg.uuid}`,
-            sessionId: session.id,
-            ts: (msg as { timestamp?: string }).timestamp ?? session.createdAt,
-            role: "user",
-            kind: "text",
-            text: m.content,
-            done: true,
-          });
-          count++;
-          continue;
-        }
-        const wrapped = { ...(msg as unknown as Record<string, unknown>), parent_tool_use_id: null } as unknown as SDKMessage;
-        const { items } = normalizer.handle(wrapped);
-        for (const item of items) {
-          await appendItem(item);
-          count++;
-        }
-      }
-      this.options.log(`imported ${count} items into ${session.id} from transcript`);
+      const items = await transcriptItems(session.id, session.cwd, session.createdAt);
+      for (const item of items) await appendItem(item);
+      this.options.log(`imported ${items.length} items into ${session.id} from transcript`);
     } catch (err) {
       this.options.log(`transcript import failed for ${session.id}: ${(err as Error).message}`);
     }
@@ -294,6 +279,8 @@ export class SessionManager {
 
     const runtime = this.runtimes.get(id) ?? (await this.start(session));
     this.clearIdle(runtime);
+    runtime.progress = { startedAt: Date.now(), outputTokens: 0, activity: "thinking", lastSentAt: 0 };
+    this.sendProgress(id, runtime, true);
     runtime.turns.push({
       type: "user",
       message: { role: "user", content: trimmed },
@@ -392,8 +379,35 @@ export class SessionManager {
       if (message.permissionMode !== session.permissionMode) this.touch(session, { permissionMode: message.permissionMode as PermissionMode });
     }
     if (message.type === "assistant" && message.context_usage) {
-      this.sessions.set(id, { ...session, contextPercent: message.context_usage.percentage });
+      const usage = message.context_usage;
+      if (Math.abs((session.contextPercent ?? -1) - usage.percentage) >= 0.5) {
+        this.touch(session, { contextPercent: usage.percentage, contextTokens: usage.total_tokens, contextMaxTokens: usage.raw_max_tokens });
+      }
     }
+    if (message.type === "rate_limit_event") {
+      // Claude Code reports the account's windows on every request; this is
+      // the same data the terminal status line shows, per session and live.
+      const info = message.rate_limit_info as typeof message.rate_limit_info & {
+        unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }>;
+      };
+      const windows = info.unifiedWindows ?? {};
+      const toWindow = (w?: { utilization?: number; resetsAt?: number }) =>
+        w ? { utilization: typeof w.utilization === "number" ? w.utilization : null, resetsAt: w.resetsAt ? new Date(w.resetsAt * 1000).toISOString() : null } : null;
+      const fallback = info.rateLimitType && info.utilization !== undefined
+        ? { [info.rateLimitType]: { utilization: info.utilization, resetsAt: info.resetsAt } }
+        : {};
+      const merged = { ...fallback, ...windows };
+      this.touch(this.sessions.get(id)!, {
+        limits: {
+          fiveHour: toWindow(merged.five_hour),
+          sevenDay: toWindow(merged.seven_day),
+          sevenDayOpus: toWindow(merged.seven_day_opus),
+        },
+      });
+      return;
+    }
+
+    this.trackProgress(id, runtime, message);
 
     const { items, deltas } = runtime.normalizer.handle(message);
     for (const delta of deltas) this.options.emit("session.delta", { sessionId: id, itemId: delta.itemId, text: delta.text });
@@ -406,15 +420,66 @@ export class SessionManager {
     if (lastText) this.sessions.set(id, { ...this.sessions.get(id)!, preview: lastText.text!.slice(0, 200) });
 
     if (message.type === "result") {
+      if (runtime.progress) {
+        runtime.progress.activity = undefined;
+        this.sendProgress(id, runtime, true);
+        runtime.progress = undefined;
+      }
       const current = this.sessions.get(id)!;
       this.touch(current, {
         state: "idle",
         pending: undefined,
         totalCostUsd: message.total_cost_usd,
+        totalDurationMs: (current.totalDurationMs ?? 0) + message.duration_ms,
+        numTurns: (current.numTurns ?? 0) + message.num_turns,
         error: message.is_error ? ("errors" in message ? message.errors.join("; ") : message.subtype) : undefined,
       });
       this.armIdle(id, runtime);
     }
+  }
+
+  /** Derive the spinner line's state from the stream; cheap, no persistence. */
+  private trackProgress(id: string, runtime: Runtime, message: SDKMessage): void {
+    const p = runtime.progress;
+    if (!p) return;
+    let changed = false;
+    const set = (activity: Progress["activity"], detail?: string): void => {
+      if (p.activity !== activity || p.detail !== detail) {
+        p.activity = activity;
+        p.detail = detail;
+        changed = true;
+      }
+    };
+    if (message.type === "stream_event") {
+      const ev = message.event as { type: string; content_block?: { type: string; name?: string }; usage?: { output_tokens?: number }; delta?: { type: string } };
+      if (ev.type === "content_block_start" && ev.content_block) {
+        if (ev.content_block.type === "thinking") set("thinking");
+        else if (ev.content_block.type === "text") set("writing");
+        else if (ev.content_block.type === "tool_use") set("tool", ev.content_block.name);
+      } else if (ev.type === "message_delta" && ev.usage?.output_tokens) {
+        p.outputTokens += ev.usage.output_tokens;
+      }
+    } else if (message.type === "user") {
+      set("reading");
+    } else if (message.type === "system" && message.subtype === "status" && message.status === "requesting") {
+      set("thinking");
+    }
+    this.sendProgress(id, runtime, changed);
+  }
+
+  private sendProgress(id: string, runtime: Runtime, force: boolean): void {
+    const p = runtime.progress;
+    if (!p) return;
+    const now = Date.now();
+    if (!force && now - p.lastSentAt < 1_000) return;
+    p.lastSentAt = now;
+    this.options.emit("session.progress", {
+      sessionId: id,
+      activity: p.activity,
+      detail: p.detail,
+      startedAt: new Date(p.startedAt).toISOString(),
+      outputTokens: p.outputTokens,
+    });
   }
 
   private askPermission(
@@ -458,6 +523,11 @@ export class SessionManager {
 
       const session = this.sessions.get(id);
       if (session) this.touch(session, { state: "requires_action", pending: request });
+      const runtime = this.runtimes.get(id);
+      if (runtime?.progress) {
+        runtime.progress.activity = "waiting";
+        this.sendProgress(id, runtime, true);
+      }
     });
   }
 
@@ -608,6 +678,37 @@ const FALLBACK_MODELS = [
   { value: "sonnet", displayName: "Sonnet 5", description: "Most efficient for everyday tasks", efforts: ["low", "medium", "high", "xhigh", "max"] as EffortLevel[] },
   { value: "haiku", displayName: "Haiku 4.5", description: "Fastest for quick answers", efforts: [] as EffortLevel[] },
 ];
+
+/**
+ * Claude Code's own transcript for a session, normalised into ChatItems. Used
+ * to seed a resumed session and to show terminal sessions read-only.
+ */
+export async function transcriptItems(claudeSessionId: string, cwd: string, fallbackTs: string): Promise<ChatItem[]> {
+  const { getSessionMessages } = await import("@anthropic-ai/claude-agent-sdk");
+  const messages = await getSessionMessages(claudeSessionId, { dir: cwd, limit: 400 });
+  const normalizer = new Normalizer(claudeSessionId);
+  const out: ChatItem[] = [];
+  for (const msg of messages) {
+    const m = msg.message as { role?: string; content?: unknown };
+    const ts = (msg as { timestamp?: string }).timestamp ?? fallbackTs;
+    if (msg.type === "user" && m) {
+      // A plain string, or a text block: the human's turn. Tool results also
+      // ride in user messages and fall through to the normaliser below.
+      const text = typeof m.content === "string"
+        ? m.content
+        : Array.isArray(m.content) && (m.content as Array<{ type: string; text?: string }>).every((b) => b.type === "text")
+          ? (m.content as Array<{ text?: string }>).map((b) => b.text ?? "").join("\n")
+          : null;
+      if (text !== null) {
+        if (text.trim()) out.push({ id: `hist-${msg.uuid}`, sessionId: claudeSessionId, ts, role: "user", kind: "text", text, done: true });
+        continue;
+      }
+    }
+    const wrapped = { ...(msg as unknown as Record<string, unknown>), parent_tool_use_id: null } as unknown as SDKMessage;
+    for (const item of normalizer.handle(wrapped).items) out.push({ ...item, ts });
+  }
+  return out;
+}
 
 /** First line of the first prompt, the way Claude Code titles a transcript. */
 export function titleFrom(prompt: string): string {

@@ -72,8 +72,20 @@ Error codes: `unauthorized`, `bad_request`, `not_found`, `conflict`,
 | `sessions.context` | live context-window usage |
 
 Events: `session.updated`, `session.removed`, `session.item` (upsert by id),
-`session.delta` (append to an open text/thinking item), `accounts.updated`,
-`daemon.updated`.
+`session.delta` (append to an open text/thinking item), `session.progress`
+(what the running turn is doing: `thinking|writing|tool|reading|waiting`, the
+turn's start time and output tokens so far; no `activity` means the turn
+ended), `accounts.updated`, `daemon.updated`.
+
+`Session.limits` carries the account's 5-hour and weekly windows as Claude
+Code reported them on the session's last request (`rate_limit_event`), so the
+HUD shows the same numbers as the terminal status line without extra usage
+calls. `sessions.get` and `sessions.items` also answer for `ext:` ids: the
+transcript of a terminal session, read from `~/.claude/projects`, read-only.
+
+Accounts come from the status line's per-profile cache; `fresh` refreshes
+entries older than 90 s one profile at a time. Polling `/api/oauth/usage` in
+parallel for every profile every minute got the daemon throttled (429).
 
 ## Session lifecycle
 

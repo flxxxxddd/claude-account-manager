@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import type { UsageSnapshot } from "../api.ts";
 import { CCA_HOME, loadConfig, requireProfile, saveConfig } from "../config.ts";
-import { statusAll } from "../session.ts";
+import { refreshUsageCache } from "../commands/statusline.ts";
 import type { Account, LimitWindow } from "./protocol.ts";
 
 /** Written by `cca cache-refresh`; the same file the status line reads. */
@@ -36,36 +36,33 @@ function iso(ms: number | undefined | null): string | undefined {
   return typeof ms === "number" ? new Date(ms).toISOString() : undefined;
 }
 
+/** A reading younger than this is served as-is even when `fresh` is asked for. */
+const FRESH_MAX_AGE_MS = 90_000;
+
 /**
- * `fresh` hits /api/oauth/usage for every profile (a few hundred ms); the
- * default answers from the status line's cache so the app opens instantly.
+ * Accounts always come from the status line's per-profile cache. `fresh`
+ * refreshes stale entries first — one profile at a time, never in parallel,
+ * and never more often than FRESH_MAX_AGE_MS. Polling /api/oauth/usage for
+ * every account every minute in parallel is exactly what earned the app a
+ * 429 ("usage endpoint is throttling") while the terminal was fine.
  */
 export async function listAccounts(options: { fresh?: boolean } = {}): Promise<Account[]> {
   const config = await loadConfig();
   const names = Object.keys(config.profiles);
 
   if (options.fresh) {
-    const statuses = await statusAll(config, { usage: true });
-    return statuses.map((s) => ({
-      name: s.name,
-      email: s.profile.email,
-      organization: s.profile.organizationName,
-      plan: s.profile.subscriptionType,
-      active: s.active,
-      loggedIn: s.loggedIn,
-      fiveHour: windowOf(s.usage?.five_hour),
-      sevenDay: windowOf(s.usage?.seven_day),
-      sevenDayOpus: windowOf(s.usage?.seven_day_opus),
-      loginExpiresAt: iso(s.loginExpiresAt),
-      usageFetchedAt: s.usage ? new Date().toISOString() : null,
-      error: s.error,
-    }));
+    for (const name of names) {
+      const cached = await readCached(name);
+      if (cached && Date.now() - cached.fetchedAt < FRESH_MAX_AGE_MS) continue;
+      await refreshUsageCache(name);
+    }
   }
 
   return Promise.all(
     names.map(async (name) => {
       const profile = config.profiles[name]!;
       const cached = await readCached(name);
+      const throttled = /throttling/i.test(cached?.error ?? "");
       return {
         name,
         email: profile.email,
@@ -80,7 +77,9 @@ export async function listAccounts(options: { fresh?: boolean } = {}): Promise<A
         sevenDayOpus: windowOf(cached?.usage?.seven_day_opus),
         loginExpiresAt: iso(cached?.refreshTokenExpiresAt),
         usageFetchedAt: cached ? new Date(cached.fetchedAt).toISOString() : null,
-        error: cached?.error,
+        // A throttled refresh keeps the last good reading; that is not an error
+        // worth showing unless there is no reading at all.
+        error: throttled && cached?.usage ? undefined : cached?.error,
       } satisfies Account;
     }),
   );

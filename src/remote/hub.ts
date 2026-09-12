@@ -11,6 +11,7 @@ import { listExternalSessions } from "./external.ts";
 import { listDirectory, listProjects } from "./projects.ts";
 import {
   PROTOCOL_VERSION,
+  type Session,
   type DaemonInfo,
   type ErrorCode,
   type Events,
@@ -20,7 +21,7 @@ import {
   type Response,
   isRequest,
 } from "./protocol.ts";
-import { SessionError, SessionManager, claudeExecutable } from "./sessions.ts";
+import { SessionError, SessionManager, claudeExecutable, transcriptItems } from "./sessions.ts";
 import type { Identity } from "./identity.ts";
 import { tokensEqual } from "./crypto.ts";
 
@@ -47,6 +48,8 @@ export class Hub {
   private claudeVersion?: string;
   relayConnected = false;
   private accountsTimer?: ReturnType<typeof setInterval>;
+  /** Last `claude agents` snapshot, so `sessions.get`/`items` can answer for ext: ids. */
+  private external = new Map<string, Session>();
 
   constructor(private readonly options: HubOptions) {
     this.sessions = new SessionManager({
@@ -97,14 +100,18 @@ export class Hub {
     }
   }
 
-  /** Other accounts' windows move while the app is open; keep them current. */
+  /**
+   * Other accounts' windows move while the app is open; keep them current.
+   * `fresh` only re-fetches entries older than 90s, one profile at a time, so
+   * this costs at most one request per profile per interval.
+   */
   private startAccountsPolling(): void {
     this.stopAccountsPolling();
     this.accountsTimer = setInterval(() => {
       void listAccounts({ fresh: true })
         .then((accounts) => this.broadcast("accounts.updated", { accounts }))
         .catch(() => undefined);
-    }, 60_000);
+    }, 3 * 60_000);
   }
 
   private stopAccountsPolling(): void {
@@ -170,6 +177,7 @@ export class Hub {
       case "sessions.list": {
         const managed = await this.sessions.list();
         const external = await listExternalSessions(this.sessions.managedClaudeIds());
+        this.external = new Map(external.map((s) => [s.id, s]));
         return { sessions: [...managed, ...external] };
       }
       case "sessions.history": {
@@ -190,11 +198,17 @@ export class Hub {
       }
       case "sessions.create":
         return { session: await this.sessions.create({ ...(p as Methods["sessions.create"]["params"]), cwd: need(p, "cwd") }) };
-      case "sessions.get":
-        return { session: await this.sessions.get(need(p, "sessionId")) };
+      case "sessions.get": {
+        const id = need(p, "sessionId");
+        return { session: (await this.externalSession(id)) ?? (await this.sessions.get(id)) };
+      }
       case "sessions.items": {
         const q = p as { sessionId: string; limit?: number; before?: string };
-        let items = await this.sessions.items(need(p, "sessionId"));
+        const id = need(p, "sessionId");
+        const ext = await this.externalSession(id);
+        let items = ext
+          ? await transcriptItems(ext.claudeSessionId!, ext.cwd, ext.createdAt).catch(() => [])
+          : await this.sessions.items(id);
         if (q.before) {
           const idx = items.findIndex((i) => i.id === q.before);
           if (idx >= 0) items = items.slice(0, idx);
@@ -236,6 +250,16 @@ export class Hub {
       default:
         throw new SessionError("bad_request", `unknown method ${String(method)}`);
     }
+  }
+
+  /** Resolve an `ext:` id from the last snapshot, refreshing it once if unknown. */
+  private async externalSession(id: string): Promise<Session | undefined> {
+    if (!id.startsWith("ext:")) return undefined;
+    if (!this.external.has(id)) {
+      const external = await listExternalSessions(this.sessions.managedClaudeIds());
+      this.external = new Map(external.map((s) => [s.id, s]));
+    }
+    return this.external.get(id);
   }
 
   async shutdown(): Promise<void> {

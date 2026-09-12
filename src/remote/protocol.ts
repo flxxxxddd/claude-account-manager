@@ -164,7 +164,13 @@ export interface Session {
   external?: ExternalInfo;
   gitBranch?: string;
   contextPercent?: number;
+  contextTokens?: number;
+  contextMaxTokens?: number;
   totalCostUsd?: number;
+  totalDurationMs?: number;
+  numTurns?: number;
+  /** Live windows for the account this session runs as, from the last API call. */
+  limits?: { fiveHour: LimitWindow | null; sevenDay: LimitWindow | null; sevenDayOpus?: LimitWindow | null };
   /** Claude Code's session UUID once the process has reported it. */
   claudeSessionId?: string;
   error?: string;
@@ -333,6 +339,20 @@ export interface Events {
   "session.item": { item: ChatItem };
   /** Streaming append to a text/thinking item that is not `done` yet. */
   "session.delta": { sessionId: string; itemId: string; text: string };
+  /**
+   * What the running turn is doing, for the spinner line. Sent when the
+   * activity changes and at most once a second otherwise; absent activity
+   * means the turn ended.
+   */
+  "session.progress": {
+    sessionId: string;
+    activity?: "thinking" | "writing" | "tool" | "reading" | "waiting";
+    /** Tool name while activity is "tool". */
+    detail?: string;
+    /** ISO 8601 of the turn's start. */
+    startedAt: string;
+    outputTokens: number;
+  };
   "accounts.updated": { accounts: Account[] };
   "daemon.updated": DaemonInfo;
 }
