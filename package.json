@@ -7,7 +7,7 @@
     "cca": "./dist/cli.js"
   },
   "files": [
-    "dist",
+    "dist/cli.js",
     "plugin",
     "README.md"
   ],
