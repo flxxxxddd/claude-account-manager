@@ -136,6 +136,27 @@ struct MessageText: View {
             }
         case .rule:
             Divider().overlay(Theme.stroke)
+        case .table(let header, let rows):
+            ScrollView(.horizontal, showsIndicators: false) {
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+                    GridRow {
+                        ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                            inline(cell).font(.caption.weight(.semibold)).foregroundStyle(Theme.secondary)
+                        }
+                    }
+                    Divider().overlay(Theme.stroke).gridCellUnsizedAxes(.horizontal)
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        GridRow {
+                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                inline(cell).font(.callout).lineLimit(3)
+                            }
+                        }
+                    }
+                }
+                .padding(10)
+            }
+            .background(Theme.card, in: .rect(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.stroke))
         }
     }
 
@@ -155,6 +176,7 @@ enum MarkdownBlock {
     case code(String?, String)
     case quote(String)
     case rule
+    case table(header: [String], rows: [[String]])
 
     static func parse(_ text: String) -> [MarkdownBlock] {
         var blocks: [MarkdownBlock] = []
@@ -163,11 +185,26 @@ enum MarkdownBlock {
         var numbered: [String] = []
         var code: [String]? = nil
         var codeLang: String? = nil
+        var tableRows: [[String]] = []
 
         func flush() {
             if !paragraph.isEmpty { blocks.append(.paragraph(paragraph.joined(separator: " "))); paragraph = [] }
             if !bullets.isEmpty { blocks.append(.bullets(bullets)); bullets = [] }
             if !numbered.isEmpty { blocks.append(.numbered(numbered)); numbered = [] }
+            if !tableRows.isEmpty {
+                // Row two is the |---|---| separator; anything else is data.
+                let header = tableRows[0]
+                let body = tableRows.dropFirst().filter { row in !row.allSatisfy { $0.allSatisfy { "-:| ".contains($0) } } }
+                blocks.append(.table(header: header, rows: Array(body)))
+                tableRows = []
+            }
+        }
+
+        func cells(_ line: String) -> [String] {
+            var inner = Substring(line)
+            if inner.hasPrefix("|") { inner = inner.dropFirst() }
+            if inner.hasSuffix("|") { inner = inner.dropLast() }
+            return inner.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
         }
 
         for rawLine in text.components(separatedBy: "\n") {
@@ -188,6 +225,13 @@ enum MarkdownBlock {
                 continue
             }
             if line.isEmpty { flush(); continue }
+            if line.hasPrefix("|"), line.count > 1 {
+                if !paragraph.isEmpty || !bullets.isEmpty || !numbered.isEmpty { flush() }
+                tableRows.append(cells(line))
+                continue
+            } else if !tableRows.isEmpty {
+                flush()
+            }
             if line == "---" || line == "***" { flush(); blocks.append(.rule); continue }
             if let level = headingLevel(line) {
                 flush()
